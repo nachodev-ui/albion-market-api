@@ -38,7 +38,9 @@ var (
 
 type MarketRepository interface {
 	IngestPrices(ctx context.Context, req domain.IngestPricesRequest) (domain.IngestPricesResult, error)
-	QueryCurrentPrices(ctx context.Context, req domain.PriceQueryRequest) ([]domain.CurrentPrice, error)
+	IngestHistory(ctx context.Context, req domain.IngestHistoryRequest) (domain.IngestHistoryResult, error)
+	QueryCurrentPrices(ctx context.Context, lookup domain.CurrentPriceLookup) ([]domain.CurrentPrice, error)
+	QueryMarketHistory(ctx context.Context, lookup domain.MarketHistoryLookup) ([]domain.MarketHistorySeries, error)
 	Ping(ctx context.Context) error
 }
 
@@ -402,19 +404,19 @@ func equalHashes(a, b []byte) bool {
 	return true
 }
 
-func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, req domain.PriceQueryRequest) ([]domain.CurrentPrice, error) {
-	serverID, err := mapServer(req.Server)
+func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, lookup domain.CurrentPriceLookup) ([]domain.CurrentPrice, error) {
+	serverID, err := mapServer(lookup.Server)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(req.LocationIDs) == 0 || len(req.Entries) == 0 {
+	if len(lookup.LocationIDs) == 0 || len(lookup.Entries) == 0 {
 		return []domain.CurrentPrice{}, nil
 	}
 
-	itemKeys := make([]string, 0, len(req.Entries))
-	qualities := make([]int16, 0, len(req.Entries))
-	for _, e := range req.Entries {
+	itemKeys := make([]string, 0, len(lookup.Entries))
+	qualities := make([]int16, 0, len(lookup.Entries))
+	for _, e := range lookup.Entries {
 		itemKeys = append(itemKeys, e.ItemKey)
 		qualities = append(qualities, e.Quality)
 	}
@@ -439,7 +441,7 @@ func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, req domain
 		order by location_id, item_key, quality
 	`
 
-	rows, err := r.db.Query(ctx, q, serverID, req.LocationIDs, itemKeys, qualities)
+	rows, err := r.db.Query(ctx, q, serverID, lookup.LocationIDs, itemKeys, qualities)
 	if err != nil {
 		return nil, fmt.Errorf("query current prices: %w", err)
 	}

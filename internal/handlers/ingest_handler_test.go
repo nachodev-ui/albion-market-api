@@ -16,12 +16,18 @@ import (
 )
 
 type fakeIngestService struct {
-	response domain.IngestPricesResponse
-	err      error
+	response        domain.IngestPricesResponse
+	err             error
+	historyResponse domain.IngestHistoryResponse
+	historyErr      error
 }
 
 func (f fakeIngestService) IngestPrices(context.Context, domain.IngestPricesRequest) (domain.IngestPricesResponse, error) {
 	return f.response, f.err
+}
+
+func (f fakeIngestService) IngestHistory(context.Context, domain.IngestHistoryRequest) (domain.IngestHistoryResponse, error) {
+	return f.historyResponse, f.historyErr
 }
 
 func TestIngestHandlerRecordsLatencyAndOrderedSuccessLog(t *testing.T) {

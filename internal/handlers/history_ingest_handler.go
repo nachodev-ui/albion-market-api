@@ -1,9 +1,6 @@
 package handlers
 
 import (
-	"compress/gzip"
-	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,90 +13,42 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/service"
 )
 
-type ingestService interface {
-	IngestPrices(ctx context.Context, req domain.IngestPricesRequest) (domain.IngestPricesResponse, error)
-	IngestHistory(ctx context.Context, req domain.IngestHistoryRequest) (domain.IngestHistoryResponse, error)
-}
-
-type IngestHandler struct {
-	service            ingestService
-	bearerTokens       []string
-	maxRequestBodySize int64
-	metrics            *observability.IngestMetrics
-	historyMetrics     *observability.HistoryIngestMetrics
-	logger             *observability.Logger
-}
-
-func NewIngestHandler(
-	service ingestService,
-	bearerTokens []string,
-	maxRequestBodySize int64,
-	metrics *observability.IngestMetrics,
-	logger *observability.Logger,
-	historyMetrics ...*observability.HistoryIngestMetrics,
-) *IngestHandler {
-	cleanTokens := make([]string, 0, len(bearerTokens))
-	for _, token := range bearerTokens {
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
-		cleanTokens = append(cleanTokens, token)
-	}
-	if maxRequestBodySize <= 0 {
-		maxRequestBodySize = 5 << 20
-	}
-	if metrics == nil {
-		metrics = observability.NewIngestMetrics()
-	}
-	if logger == nil {
-		logger = observability.NewLogger(io.Discard, "never")
-	}
-	historyMetricSet := observability.NewHistoryIngestMetrics()
-	if len(historyMetrics) > 0 && historyMetrics[0] != nil {
-		historyMetricSet = historyMetrics[0]
-	}
-	return &IngestHandler{
-		service:            service,
-		bearerTokens:       cleanTokens,
-		maxRequestBodySize: maxRequestBodySize,
-		metrics:            metrics,
-		historyMetrics:     historyMetricSet,
-		logger:             logger,
-	}
-}
-
-func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
+func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
-	h.metrics.RequestStarted(startedAt)
+	h.historyMetrics.RequestStarted(startedAt)
 
 	statusCode := http.StatusInternalServerError
 	requestID := ""
 	serverName := ""
 	entries := 0
-	accepted := 0
-	currentRowsTouched := int64(0)
+	buckets := 0
+	acceptedEntries := 0
+	acceptedBuckets := 0
+	historyRowsTouched := int64(0)
 	duplicate := false
 	errorKind := "internal_error"
 	errorDetail := "request ended without a response"
 
 	defer func() {
 		duration := time.Since(startedAt)
-		h.metrics.RequestFinished(observability.IngestObservation{
+		h.historyMetrics.RequestFinished(observability.HistoryIngestObservation{
 			CompletedAt:        time.Now(),
 			Duration:           duration,
 			StatusCode:         statusCode,
-			Accepted:           accepted,
-			CurrentRowsTouched: currentRowsTouched,
+			AcceptedEntries:    acceptedEntries,
+			AcceptedBuckets:    acceptedBuckets,
+			HistoryRowsTouched: historyRowsTouched,
 			Duplicate:          duplicate,
 			ErrorKind:          errorKind,
 		})
-		h.logOutcome(
+		h.logHistoryOutcome(
 			requestID,
 			serverName,
 			entries,
-			accepted,
-			currentRowsTouched,
+			buckets,
+			acceptedEntries,
+			acceptedBuckets,
+			historyRowsTouched,
 			duplicate,
 			statusCode,
 			duration,
@@ -147,7 +96,7 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(bodyReader)
 	decoder.DisallowUnknownFields()
 
-	var req domain.IngestPricesRequest
+	var req domain.IngestHistoryRequest
 	if err := decoder.Decode(&req); err != nil {
 		var maxBytesError *http.MaxBytesError
 		if errors.As(err, &maxBytesError) {
@@ -173,14 +122,20 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 	requestID = req.RequestID
 	serverName = string(req.Server)
 	entries = len(req.Entries)
+	for _, entry := range req.Entries {
+		buckets += len(entry.History)
+	}
 
-	resp, err := h.service.IngestPrices(r.Context(), req)
+	resp, err := h.service.IngestHistory(r.Context(), req)
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidIngestRequest):
+		case errors.Is(err, service.ErrInvalidHistoryIngestRequest):
 			statusCode = http.StatusBadRequest
 			errorKind = "validation_error"
-			errorDetail = strings.TrimPrefix(err.Error(), service.ErrInvalidIngestRequest.Error()+": ")
+			errorDetail = strings.TrimPrefix(
+				err.Error(),
+				service.ErrInvalidHistoryIngestRequest.Error()+": ",
+			)
 			writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail, RequestID: requestID})
 		case errors.Is(err, service.ErrIngestRequestAlreadyProcessing):
 			statusCode = http.StatusConflict
@@ -196,7 +151,10 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusInternalServerError
 			errorKind = "internal_error"
 			errorDetail = err.Error()
-			writeJSON(w, statusCode, ingestErrorResponse{Error: "internal server error", RequestID: requestID})
+			writeJSON(w, statusCode, ingestErrorResponse{
+				Error:     "internal server error",
+				RequestID: requestID,
+			})
 		}
 		return
 	}
@@ -205,25 +163,23 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 	if resp.Duplicate {
 		statusCode = http.StatusOK
 	}
-	accepted = resp.Accepted
-	currentRowsTouched = resp.CurrentRowsTouched
+	acceptedEntries = resp.AcceptedEntries
+	acceptedBuckets = resp.AcceptedBuckets
+	historyRowsTouched = resp.HistoryRowsTouched
 	duplicate = resp.Duplicate
 	errorKind = ""
 	errorDetail = ""
 	writeJSON(w, statusCode, resp)
 }
 
-type ingestErrorResponse struct {
-	Error     string `json:"error"`
-	RequestID string `json:"request_id,omitempty"`
-}
-
-func (h *IngestHandler) logOutcome(
+func (h *IngestHandler) logHistoryOutcome(
 	requestID string,
 	serverName string,
 	entries int,
-	accepted int,
-	currentRowsTouched int64,
+	buckets int,
+	acceptedEntries int,
+	acceptedBuckets int,
+	historyRowsTouched int64,
 	duplicate bool,
 	statusCode int,
 	duration time.Duration,
@@ -241,8 +197,10 @@ func (h *IngestHandler) logOutcome(
 		observability.F("request_id", requestID),
 		observability.F("server", serverName),
 		observability.F("entries", entries),
-		observability.F("accepted", accepted),
-		observability.F("current_rows_touched", currentRowsTouched),
+		observability.F("buckets", buckets),
+		observability.F("accepted_entries", acceptedEntries),
+		observability.F("accepted_buckets", acceptedBuckets),
+		observability.F("history_rows_touched", historyRowsTouched),
 		observability.F("duplicate", duplicate),
 		observability.F("status", statusCode),
 		observability.F("duration_ms", durationMilliseconds(duration)),
@@ -254,70 +212,16 @@ func (h *IngestHandler) logOutcome(
 			observability.F("error_kind", errorKind),
 			observability.F("error", errorDetail),
 		)
-		h.logger.Error("ingest.failed", fields...)
+		h.logger.Error("ingest.history_failed", fields...)
 	case statusCode >= 400:
 		fields = append(fields,
 			observability.F("error_kind", errorKind),
 			observability.F("error", errorDetail),
 		)
-		h.logger.Warn("ingest.rejected", fields...)
+		h.logger.Warn("ingest.history_rejected", fields...)
 	case duplicate:
-		h.logger.Duplicate("ingest.duplicate", fields...)
+		h.logger.Duplicate("ingest.history_duplicate", fields...)
 	default:
-		h.logger.Success("ingest.completed", fields...)
+		h.logger.Success("ingest.history_completed", fields...)
 	}
-}
-
-func ensureJSONEOF(decoder *json.Decoder) error {
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return errors.New("multiple json values")
-		}
-		return err
-	}
-	return nil
-}
-
-func durationMilliseconds(duration time.Duration) float64 {
-	return float64(duration.Microseconds()) / 1000
-}
-
-var errUnsupportedEncoding = errors.New("unsupported content encoding")
-
-func (h *IngestHandler) requestBodyReader(w http.ResponseWriter, r *http.Request) (io.Reader, error) {
-	limitedBody := http.MaxBytesReader(w, r.Body, h.maxRequestBodySize)
-
-	switch strings.TrimSpace(strings.ToLower(r.Header.Get("Content-Encoding"))) {
-	case "", "identity":
-		return limitedBody, nil
-	case "gzip":
-		reader, err := gzip.NewReader(limitedBody)
-		if err != nil {
-			return nil, errors.New("invalid gzip body")
-		}
-		return reader, nil
-	default:
-		return nil, errUnsupportedEncoding
-	}
-}
-
-func authorizedBearer(headerValue string, expectedTokens []string) bool {
-	if len(expectedTokens) == 0 {
-		return false
-	}
-	const prefix = "Bearer "
-	if !strings.HasPrefix(headerValue, prefix) {
-		return false
-	}
-	provided := strings.TrimSpace(strings.TrimPrefix(headerValue, prefix))
-	if provided == "" {
-		return false
-	}
-	for _, expectedToken := range expectedTokens {
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(expectedToken)) == 1 {
-			return true
-		}
-	}
-	return false
 }
