@@ -20,6 +20,7 @@ type Config struct {
 	IngestBearerToken         string
 	IngestPreviousBearerToken string
 	MaxIngestBodyBytes        int64
+	LogColor                  string
 }
 
 func Load() (Config, error) {
@@ -36,6 +37,7 @@ func Load() (Config, error) {
 		IngestBearerToken:         strings.TrimSpace(os.Getenv("INGEST_BEARER_TOKEN")),
 		IngestPreviousBearerToken: strings.TrimSpace(os.Getenv("INGEST_BEARER_TOKEN_PREVIOUS")),
 		MaxIngestBodyBytes:        getInt64Env("MAX_INGEST_BODY_BYTES", 5<<20),
+		LogColor:                  getEnv("LOG_COLOR", "auto"),
 	}
 
 	if cfg.DatabaseURL == "" {

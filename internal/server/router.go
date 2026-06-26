@@ -10,12 +10,14 @@ func NewRouter(
 	healthHandler *handlers.HealthHandler,
 	ingestHandler *handlers.IngestHandler,
 	pricesHandler *handlers.PricesHandler,
+	statusHandler *handlers.StatusHandler,
 ) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", healthHandler.Healthz)
 	mux.HandleFunc("/api/v1/ingest/prices", ingestHandler.IngestPrices)
 	mux.HandleFunc("/api/v1/prices/query", pricesHandler.QueryCurrentPrices)
+	mux.HandleFunc("/api/v1/status", statusHandler.Status)
 
 	return withCORS(mux)
 }

@@ -2,24 +2,39 @@ package handlers
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/nachodev-ui/albion-market-api/internal/domain"
+	"github.com/nachodev-ui/albion-market-api/internal/observability"
 	"github.com/nachodev-ui/albion-market-api/internal/service"
 )
 
-type IngestHandler struct {
-	service            *service.MarketService
-	bearerTokens       []string
-	maxRequestBodySize int64
+type ingestService interface {
+	IngestPrices(ctx context.Context, req domain.IngestPricesRequest) (domain.IngestPricesResponse, error)
 }
 
-func NewIngestHandler(service *service.MarketService, bearerTokens []string, maxRequestBodySize int64) *IngestHandler {
+type IngestHandler struct {
+	service            ingestService
+	bearerTokens       []string
+	maxRequestBodySize int64
+	metrics            *observability.IngestMetrics
+	logger             *observability.Logger
+}
+
+func NewIngestHandler(
+	service ingestService,
+	bearerTokens []string,
+	maxRequestBodySize int64,
+	metrics *observability.IngestMetrics,
+	logger *observability.Logger,
+) *IngestHandler {
 	cleanTokens := make([]string, 0, len(bearerTokens))
 	for _, token := range bearerTokens {
 		token = strings.TrimSpace(token)
@@ -31,23 +46,73 @@ func NewIngestHandler(service *service.MarketService, bearerTokens []string, max
 	if maxRequestBodySize <= 0 {
 		maxRequestBodySize = 5 << 20
 	}
+	if metrics == nil {
+		metrics = observability.NewIngestMetrics()
+	}
+	if logger == nil {
+		logger = observability.NewLogger(io.Discard, "never")
+	}
 	return &IngestHandler{
 		service:            service,
 		bearerTokens:       cleanTokens,
 		maxRequestBodySize: maxRequestBodySize,
+		metrics:            metrics,
+		logger:             logger,
 	}
 }
 
 func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
+	startedAt := time.Now()
+	h.metrics.RequestStarted(startedAt)
+
+	statusCode := http.StatusInternalServerError
+	requestID := ""
+	serverName := ""
+	entries := 0
+	accepted := 0
+	currentRowsTouched := int64(0)
+	duplicate := false
+	errorKind := "internal_error"
+	errorDetail := "request ended without a response"
+
+	defer func() {
+		duration := time.Since(startedAt)
+		h.metrics.RequestFinished(observability.IngestObservation{
+			CompletedAt:        time.Now(),
+			Duration:           duration,
+			StatusCode:         statusCode,
+			Accepted:           accepted,
+			CurrentRowsTouched: currentRowsTouched,
+			Duplicate:          duplicate,
+			ErrorKind:          errorKind,
+		})
+		h.logOutcome(
+			requestID,
+			serverName,
+			entries,
+			accepted,
+			currentRowsTouched,
+			duplicate,
+			statusCode,
+			duration,
+			errorKind,
+			errorDetail,
+		)
+	}()
+
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		statusCode = http.StatusMethodNotAllowed
+		errorKind = "method_not_allowed"
+		errorDetail = "method not allowed"
+		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
 		return
 	}
 
 	if !authorizedBearer(r.Header.Get("Authorization"), h.bearerTokens) {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{
-			"error": "unauthorized",
-		})
+		statusCode = http.StatusUnauthorized
+		errorKind = "unauthorized"
+		errorDetail = "unauthorized"
+		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
 		return
 	}
 
@@ -55,13 +120,14 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 
 	bodyReader, err := h.requestBodyReader(w, r)
 	if err != nil {
-		status := http.StatusBadRequest
+		statusCode = http.StatusBadRequest
+		errorKind = "invalid_content_encoding"
 		if errors.Is(err, errUnsupportedEncoding) {
-			status = http.StatusUnsupportedMediaType
+			statusCode = http.StatusUnsupportedMediaType
+			errorKind = "unsupported_content_encoding"
 		}
-		writeJSON(w, status, map[string]any{
-			"error": err.Error(),
-		})
+		errorDetail = err.Error()
+		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
 		return
 	}
 	defer func() {
@@ -75,44 +141,138 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 
 	var req domain.IngestPricesRequest
 	if err := decoder.Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error": "invalid json",
-		})
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			statusCode = http.StatusRequestEntityTooLarge
+			errorKind = "payload_too_large"
+			errorDetail = "request body too large"
+		} else {
+			statusCode = http.StatusBadRequest
+			errorKind = "invalid_json"
+			errorDetail = "invalid json"
+		}
+		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
 		return
 	}
-	if decoder.More() {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error": "invalid json",
-		})
+	if err := ensureJSONEOF(decoder); err != nil {
+		statusCode = http.StatusBadRequest
+		errorKind = "invalid_json"
+		errorDetail = "invalid json"
+		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
 		return
 	}
+
+	requestID = req.RequestID
+	serverName = string(req.Server)
+	entries = len(req.Entries)
 
 	resp, err := h.service.IngestPrices(r.Context(), req)
 	if err != nil {
 		switch {
+		case errors.Is(err, service.ErrInvalidIngestRequest):
+			statusCode = http.StatusBadRequest
+			errorKind = "validation_error"
+			errorDetail = strings.TrimPrefix(err.Error(), service.ErrInvalidIngestRequest.Error()+": ")
+			writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail, RequestID: requestID})
 		case errors.Is(err, service.ErrIngestRequestAlreadyProcessing):
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"error":      err.Error(),
-				"request_id": req.RequestID,
-			})
+			statusCode = http.StatusConflict
+			errorKind = "request_already_processing"
+			errorDetail = err.Error()
+			writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail, RequestID: requestID})
 		case errors.Is(err, service.ErrIngestRequestPayloadConflict):
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"error":      err.Error(),
-				"request_id": req.RequestID,
-			})
+			statusCode = http.StatusConflict
+			errorKind = "request_payload_conflict"
+			errorDetail = err.Error()
+			writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail, RequestID: requestID})
 		default:
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": err.Error(),
-			})
+			statusCode = http.StatusInternalServerError
+			errorKind = "internal_error"
+			errorDetail = err.Error()
+			writeJSON(w, statusCode, ingestErrorResponse{Error: "internal server error", RequestID: requestID})
 		}
 		return
 	}
 
-	status := http.StatusAccepted
+	statusCode = http.StatusAccepted
 	if resp.Duplicate {
-		status = http.StatusOK
+		statusCode = http.StatusOK
 	}
-	writeJSON(w, status, resp)
+	accepted = resp.Accepted
+	currentRowsTouched = resp.CurrentRowsTouched
+	duplicate = resp.Duplicate
+	errorKind = ""
+	errorDetail = ""
+	writeJSON(w, statusCode, resp)
+}
+
+type ingestErrorResponse struct {
+	Error     string `json:"error"`
+	RequestID string `json:"request_id,omitempty"`
+}
+
+func (h *IngestHandler) logOutcome(
+	requestID string,
+	serverName string,
+	entries int,
+	accepted int,
+	currentRowsTouched int64,
+	duplicate bool,
+	statusCode int,
+	duration time.Duration,
+	errorKind string,
+	errorDetail string,
+) {
+	if requestID == "" {
+		requestID = "-"
+	}
+	if serverName == "" {
+		serverName = "-"
+	}
+
+	fields := []observability.Field{
+		observability.F("request_id", requestID),
+		observability.F("server", serverName),
+		observability.F("entries", entries),
+		observability.F("accepted", accepted),
+		observability.F("current_rows_touched", currentRowsTouched),
+		observability.F("duplicate", duplicate),
+		observability.F("status", statusCode),
+		observability.F("duration_ms", durationMilliseconds(duration)),
+	}
+
+	switch {
+	case statusCode >= 500:
+		fields = append(fields,
+			observability.F("error_kind", errorKind),
+			observability.F("error", errorDetail),
+		)
+		h.logger.Error("ingest.failed", fields...)
+	case statusCode >= 400:
+		fields = append(fields,
+			observability.F("error_kind", errorKind),
+			observability.F("error", errorDetail),
+		)
+		h.logger.Warn("ingest.rejected", fields...)
+	case duplicate:
+		h.logger.Duplicate("ingest.duplicate", fields...)
+	default:
+		h.logger.Success("ingest.completed", fields...)
+	}
+}
+
+func ensureJSONEOF(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("multiple json values")
+		}
+		return err
+	}
+	return nil
+}
+
+func durationMilliseconds(duration time.Duration) float64 {
+	return float64(duration.Microseconds()) / 1000
 }
 
 var errUnsupportedEncoding = errors.New("unsupported content encoding")

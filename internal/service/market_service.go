@@ -12,6 +12,7 @@ import (
 var (
 	ErrIngestRequestAlreadyProcessing = errors.New("request_id is already processing")
 	ErrIngestRequestPayloadConflict   = errors.New("request_id was already used with a different payload")
+	ErrInvalidIngestRequest           = errors.New("invalid ingest request")
 )
 
 type MarketService struct {
@@ -28,13 +29,16 @@ func (s *MarketService) Ping(ctx context.Context) error {
 
 func (s *MarketService) IngestPrices(ctx context.Context, req domain.IngestPricesRequest) (domain.IngestPricesResponse, error) {
 	if req.RequestID == "" {
-		return domain.IngestPricesResponse{}, fmt.Errorf("request_id is required")
+		return domain.IngestPricesResponse{}, fmt.Errorf("%w: request_id is required", ErrInvalidIngestRequest)
 	}
 	if req.Server == "" {
-		return domain.IngestPricesResponse{}, fmt.Errorf("server is required")
+		return domain.IngestPricesResponse{}, fmt.Errorf("%w: server is required", ErrInvalidIngestRequest)
 	}
 	if len(req.Entries) == 0 {
-		return domain.IngestPricesResponse{}, fmt.Errorf("entries is required")
+		return domain.IngestPricesResponse{}, fmt.Errorf("%w: entries is required", ErrInvalidIngestRequest)
+	}
+	if req.Server != domain.ServerWest && req.Server != domain.ServerEast && req.Server != domain.ServerEurope {
+		return domain.IngestPricesResponse{}, fmt.Errorf("%w: unsupported server %q", ErrInvalidIngestRequest, req.Server)
 	}
 
 	result, err := s.repo.IngestPrices(ctx, req)
