@@ -13,6 +13,7 @@ var (
 	ErrIngestRequestAlreadyProcessing = errors.New("request_id is already processing")
 	ErrIngestRequestPayloadConflict   = errors.New("request_id was already used with a different payload")
 	ErrInvalidIngestRequest           = errors.New("invalid ingest request")
+	ErrInvalidPriceQuery              = errors.New("invalid price query")
 )
 
 type MarketService struct {
@@ -63,7 +64,10 @@ func (s *MarketService) IngestPrices(ctx context.Context, req domain.IngestPrice
 
 func (s *MarketService) QueryCurrentPrices(ctx context.Context, req domain.PriceQueryRequest) (domain.PriceQueryResponse, error) {
 	if req.Server == "" {
-		return domain.PriceQueryResponse{}, fmt.Errorf("server is required")
+		return domain.PriceQueryResponse{}, fmt.Errorf("%w: server is required", ErrInvalidPriceQuery)
+	}
+	if req.Server != domain.ServerWest && req.Server != domain.ServerEast && req.Server != domain.ServerEurope {
+		return domain.PriceQueryResponse{}, fmt.Errorf("%w: unsupported server %q", ErrInvalidPriceQuery, req.Server)
 	}
 
 	prices, err := s.repo.QueryCurrentPrices(ctx, req)

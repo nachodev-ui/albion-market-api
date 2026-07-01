@@ -38,8 +38,9 @@ func TestRouterExposesStatusEndpoint(t *testing.T) {
 	router := NewRouter(
 		handlers.NewHealthHandler(marketService),
 		handlers.NewIngestHandler(marketService, []string{"secret"}, 1<<20, metrics, nil),
-		handlers.NewPricesHandler(marketService),
+		handlers.NewPricesHandler(marketService, 1<<20),
 		handlers.NewStatusHandler("albion-market-api", "test", time.Now(), routerDatabaseMonitor{}, metrics),
+		SecurityOptions{},
 	)
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)

@@ -101,6 +101,7 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
 		statusCode = http.StatusMethodNotAllowed
 		errorKind = "method_not_allowed"
 		errorDetail = "method not allowed"
@@ -112,6 +113,13 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusUnauthorized
 		errorKind = "unauthorized"
 		errorDetail = "unauthorized"
+		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
+		return
+	}
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		statusCode = http.StatusUnsupportedMediaType
+		errorKind = "unsupported_content_type"
+		errorDetail = "content type must be application/json"
 		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
 		return
 	}
@@ -278,17 +286,17 @@ func durationMilliseconds(duration time.Duration) float64 {
 var errUnsupportedEncoding = errors.New("unsupported content encoding")
 
 func (h *IngestHandler) requestBodyReader(w http.ResponseWriter, r *http.Request) (io.Reader, error) {
-	limitedBody := http.MaxBytesReader(w, r.Body, h.maxRequestBodySize)
+	compressedBody := http.MaxBytesReader(w, r.Body, h.maxRequestBodySize)
 
 	switch strings.TrimSpace(strings.ToLower(r.Header.Get("Content-Encoding"))) {
 	case "", "identity":
-		return limitedBody, nil
+		return compressedBody, nil
 	case "gzip":
-		reader, err := gzip.NewReader(limitedBody)
+		gzipReader, err := gzip.NewReader(compressedBody)
 		if err != nil {
 			return nil, errors.New("invalid gzip body")
 		}
-		return reader, nil
+		return http.MaxBytesReader(w, gzipReader, h.maxRequestBodySize), nil
 	default:
 		return nil, errUnsupportedEncoding
 	}
