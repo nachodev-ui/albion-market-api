@@ -33,12 +33,36 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		duration := time.Since(startedAt)
+		storedBuckets := 0
+		rejectedEntries := 0
+		rejectedBuckets := 0
+		duplicateEntries := 0
+		duplicateBuckets := 0
+		switch {
+		case duplicate:
+			duplicateEntries = acceptedEntries
+			duplicateBuckets = acceptedBuckets
+		case statusCode >= 200 && statusCode < 300:
+			storedBuckets = acceptedBuckets
+			rejectedEntries = max(entries-acceptedEntries, 0)
+			rejectedBuckets = max(buckets-acceptedBuckets, 0)
+		case entries > 0 || buckets > 0:
+			rejectedEntries = entries
+			rejectedBuckets = buckets
+		}
 		h.historyMetrics.RequestFinished(observability.HistoryIngestObservation{
 			CompletedAt:        time.Now(),
 			Duration:           duration,
 			StatusCode:         statusCode,
+			ReceivedEntries:    entries,
+			ReceivedBuckets:    buckets,
 			AcceptedEntries:    acceptedEntries,
 			AcceptedBuckets:    acceptedBuckets,
+			StoredBuckets:      storedBuckets,
+			RejectedEntries:    rejectedEntries,
+			RejectedBuckets:    rejectedBuckets,
+			DuplicateEntries:   duplicateEntries,
+			DuplicateBuckets:   duplicateBuckets,
 			HistoryRowsTouched: historyRowsTouched,
 			Duplicate:          duplicate,
 			ErrorKind:          errorKind,

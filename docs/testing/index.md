@@ -39,7 +39,7 @@ comparaciones automáticas con Go.
 .\scripts\test-deployment-compose.ps1
 ```
 
-La primera prueba valida directamente la imagen. La segunda valida el modelo Compose completo: imágenes fijadas por digest, secretos montados, migraciones obligatorias, runtime endurecido, `/healthz`, `/readyz`, `/metrics`, ausencia de secretos en métricas y apagado por `SIGTERM`. Consulta [Despliegue reproducible y seguro](../deployment/).
+La primera prueba valida directamente la imagen. La segunda valida el modelo Compose completo: imágenes fijadas por digest, secretos montados, migraciones obligatorias, runtime endurecido, `/healthz`, `/readyz`, `/metrics`, ausencia de secretos en métricas y apagado por `SIGTERM`. También detiene PostgreSQL temporalmente para comprobar que liveness continúa saludable, readiness responde `503`, el contenedor no se reinicia y readiness se recupera al restaurar la base. Consulta [Despliegue reproducible y seguro](../deployment/).
 
 ## Documentación
 

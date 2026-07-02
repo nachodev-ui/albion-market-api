@@ -259,7 +259,14 @@ try {
     foreach ($ExpectedMetric in @(
         "albion_market_api_build_info",
         "albion_market_api_http_requests_total",
-        "albion_market_api_database_ready 1"
+        "albion_market_api_http_errors_total",
+        "albion_market_api_readiness_ready 1",
+        'albion_market_api_readiness_checks_total{result="success"}',
+        "albion_market_api_database_ready 1",
+        "albion_market_api_database_pool_acquisition_duration_seconds",
+        "albion_market_api_ingest_batches_total",
+        "albion_market_api_ingest_entries_received_total",
+        "albion_market_api_database_transaction_duration_seconds"
     )) {
         if ($MetricsBody -notmatch [Regex]::Escape($ExpectedMetric)) {
             throw "Metrics output is missing $ExpectedMetric"

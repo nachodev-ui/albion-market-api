@@ -42,6 +42,11 @@ El prefijo `/api/v1` es la versión mayor del contrato público. `/healthz`,
 `/readyz` y `/metrics` se mantienen fuera del prefijo por ser endpoints
 operacionales.
 
+`/readyz` representa preparación real, no solo vida del proceso: adquiere una
+conexión del pool, ejecuta una comprobación PostgreSQL y exige la versión mínima
+del esquema junto con sus relaciones críticas. Los detalles del fallo no forman
+parte de la respuesta pública.
+
 ## Convenciones preservadas
 
 El contrato no intenta uniformar nombres ya publicados:

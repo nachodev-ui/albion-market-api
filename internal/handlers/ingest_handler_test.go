@@ -58,8 +58,10 @@ func TestIngestHandlerRecordsLatencyAndOrderedSuccessLog(t *testing.T) {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusAccepted, response.Body.String())
 	}
 	snapshot := metrics.Snapshot()
-	if snapshot.RequestsTotal != 1 || snapshot.SucceededTotal != 1 || snapshot.AcceptedEntriesTotal != 1 {
-		t.Fatalf("metrics = %#v, want one successful accepted entry", snapshot)
+	if snapshot.RequestsTotal != 1 || snapshot.SucceededTotal != 1 ||
+		snapshot.ReceivedEntriesTotal != 1 || snapshot.AcceptedEntriesTotal != 1 ||
+		snapshot.StoredEntriesTotal != 1 || snapshot.RejectedEntriesTotal != 0 {
+		t.Fatalf("metrics = %#v, want one received, accepted and stored entry", snapshot)
 	}
 	line := logs.String()
 	ordered := []string{
@@ -88,11 +90,12 @@ func TestIngestHandlerHidesInternalErrorFromResponse(t *testing.T) {
 	t.Parallel()
 
 	var logs bytes.Buffer
+	metrics := observability.NewIngestMetrics()
 	handler := NewIngestHandler(
 		fakeIngestService{err: errors.New("password authentication failed")},
 		testAuthenticator(t, "secret"),
 		1<<20,
-		observability.NewIngestMetrics(),
+		metrics,
 		observability.NewLogger(&logs, "never"),
 	)
 
@@ -109,6 +112,11 @@ func TestIngestHandlerHidesInternalErrorFromResponse(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "password authentication failed") {
 		t.Fatalf("internal error was not logged: %s", logs.String())
+	}
+	snapshot := metrics.Snapshot()
+	if snapshot.ErrorsTotal != 1 || snapshot.ReceivedEntriesTotal != 1 ||
+		snapshot.RejectedEntriesTotal != 1 || snapshot.StoredEntriesTotal != 0 {
+		t.Fatalf("error metrics = %#v, want one received and rejected entry", snapshot)
 	}
 }
 

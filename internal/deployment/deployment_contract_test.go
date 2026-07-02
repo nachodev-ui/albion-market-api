@@ -111,6 +111,27 @@ func TestLinuxSecretFilesSupportNonRootComposeRuntime(t *testing.T) {
 	requireContains(t, migrate, "command:\n      - |")
 	requireContains(t, migrate, `echo "Applying $${migration##*/}"`)
 }
+
+func TestContainerHealthcheckUsesLiveness(t *testing.T) {
+	dockerfile := readProjectFile(t, "Dockerfile")
+	requireContains(t, dockerfile, "HEALTHCHECK_URL=http://127.0.0.1:8080/healthz")
+	if strings.Contains(dockerfile, "HEALTHCHECK_URL=http://127.0.0.1:8080/readyz") {
+		t.Fatal("container healthcheck must not restart the API for a transient PostgreSQL outage")
+	}
+}
+
+func TestReadinessMigrationPublishesExpectedSchemaVersion(t *testing.T) {
+	migration := readProjectFile(t, "migrations", "000006_observability_readiness.sql")
+	for _, expected := range []string{
+		"create table if not exists app_schema_state",
+		"singleton boolean primary key",
+		"values (true, 6, now())",
+		"version = greatest(app_schema_state.version, excluded.version)",
+	} {
+		requireContains(t, strings.ToLower(migration), strings.ToLower(expected))
+	}
+}
+
 func readProjectFile(t *testing.T, parts ...string) string {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)

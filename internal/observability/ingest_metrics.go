@@ -9,7 +9,11 @@ type IngestObservation struct {
 	CompletedAt        time.Time
 	Duration           time.Duration
 	StatusCode         int
+	Received           int
 	Accepted           int
+	Stored             int
+	Rejected           int
+	DuplicateEntries   int
 	CurrentRowsTouched int64
 	Duplicate          bool
 	ErrorKind          string
@@ -21,7 +25,11 @@ type IngestMetricsSnapshot struct {
 	SucceededTotal          uint64
 	DuplicatesTotal         uint64
 	ErrorsTotal             uint64
+	ReceivedEntriesTotal    uint64
 	AcceptedEntriesTotal    uint64
+	StoredEntriesTotal      uint64
+	RejectedEntriesTotal    uint64
+	DuplicateEntriesTotal   uint64
 	CurrentRowsTouchedTotal uint64
 	DurationTotal           time.Duration
 	AverageDuration         time.Duration
@@ -43,7 +51,11 @@ type IngestMetrics struct {
 	succeededTotal          uint64
 	duplicatesTotal         uint64
 	errorsTotal             uint64
+	receivedEntriesTotal    uint64
 	acceptedEntriesTotal    uint64
+	storedEntriesTotal      uint64
+	rejectedEntriesTotal    uint64
+	duplicateEntriesTotal   uint64
 	currentRowsTouchedTotal uint64
 	durationTotal           time.Duration
 	lastDuration            time.Duration
@@ -80,6 +92,8 @@ func (m *IngestMetrics) RequestFinished(observation IngestObservation) {
 	if observation.Duration > m.maxDuration {
 		m.maxDuration = observation.Duration
 	}
+	m.receivedEntriesTotal += uint64(max(observation.Received, 0))
+	m.rejectedEntriesTotal += uint64(max(observation.Rejected, 0))
 
 	completedAt := observation.CompletedAt.UTC()
 	if observation.StatusCode >= 200 && observation.StatusCode < 300 {
@@ -87,9 +101,11 @@ func (m *IngestMetrics) RequestFinished(observation IngestObservation) {
 		m.lastSuccessAt = &completedAt
 		if observation.Duplicate {
 			m.duplicatesTotal++
+			m.duplicateEntriesTotal += uint64(max(observation.DuplicateEntries, 0))
 			return
 		}
 		m.acceptedEntriesTotal += uint64(max(observation.Accepted, 0))
+		m.storedEntriesTotal += uint64(max(observation.Stored, 0))
 		m.currentRowsTouchedTotal += uint64(max(observation.CurrentRowsTouched, 0))
 		return
 	}
@@ -115,7 +131,11 @@ func (m *IngestMetrics) Snapshot() IngestMetricsSnapshot {
 		SucceededTotal:          m.succeededTotal,
 		DuplicatesTotal:         m.duplicatesTotal,
 		ErrorsTotal:             m.errorsTotal,
+		ReceivedEntriesTotal:    m.receivedEntriesTotal,
 		AcceptedEntriesTotal:    m.acceptedEntriesTotal,
+		StoredEntriesTotal:      m.storedEntriesTotal,
+		RejectedEntriesTotal:    m.rejectedEntriesTotal,
+		DuplicateEntriesTotal:   m.duplicateEntriesTotal,
 		CurrentRowsTouchedTotal: m.currentRowsTouchedTotal,
 		DurationTotal:           m.durationTotal,
 		AverageDuration:         average,

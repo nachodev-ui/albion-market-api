@@ -81,7 +81,7 @@ La API solo arranca después de que PostgreSQL esté saludable y todas las migra
 | Método | Ruta | Propósito |
 |---|---|---|
 | `GET` | `/healthz` | Liveness del proceso |
-| `GET` | `/readyz` | Readiness con PostgreSQL |
+| `GET` | `/readyz` | Readiness del pool, PostgreSQL y esquema |
 | `GET` | `/metrics` | Métricas Prometheus |
 | `GET` | `/api/v1/status` | Estado operativo y métricas |
 | `GET` | `/api/v1/markets` | Catálogo público de mercados |

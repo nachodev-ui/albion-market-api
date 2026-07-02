@@ -1,8 +1,8 @@
 # Observabilidad
 
-La API expone una base de observabilidad interna antes de incorporar Prometheus,
-Grafana y Alertmanager como servicios externos. Este bloque incluye logs
-estructurados, correlación HTTP, liveness, readiness y métricas Prometheus.
+La API expone logs estructurados, correlación HTTP, liveness, readiness y métricas
+Prometheus. Prometheus, Grafana y Alertmanager se incorporan como servicios
+externos en el siguiente bloque de la etapa 6.
 
 ## Logs estructurados
 
@@ -59,7 +59,7 @@ GET /healthz
 
 Solo confirma que el proceso HTTP está vivo. No consulta PostgreSQL, por lo que
 una interrupción breve de la base de datos no provoca reinicios innecesarios del
-contenedor.
+contenedor. El `HEALTHCHECK` de la imagen utiliza esta sonda.
 
 ### Readiness
 
@@ -67,11 +67,21 @@ contenedor.
 GET /readyz
 ```
 
-Ejecuta un ping PostgreSQL con timeout acotado:
+La comprobación usa un timeout acotado y exige, en este orden:
 
-- `200 {"status":"ok"}` cuando la API está lista;
-- `503` con un mensaje genérico cuando PostgreSQL no responde;
-- nunca expone host, DSN ni texto interno del error.
+1. que el pool PostgreSQL entregue una conexión;
+2. que esa conexión responda a `Ping`;
+3. que existan las relaciones críticas de lectura, ingesta y auditoría;
+4. que `public.app_schema_state` indique como mínimo la versión `6`.
+
+Resultados:
+
+- `200 {"status":"ok"}` cuando la API puede recibir tráfico;
+- `503` con un mensaje genérico cuando falla el pool, PostgreSQL o el esquema;
+- nunca expone host, DSN, relaciones faltantes ni texto interno del error.
+
+La migración `000006_observability_readiness.sql` mantiene el marcador de versión.
+Una instancia con migraciones incompletas continúa viva, pero no lista.
 
 `/healthz`, `/readyz`, `/metrics` y `OPTIONS` quedan fuera del rate limiter.
 
@@ -94,21 +104,49 @@ no-store`.
 
 ```text
 albion_market_api_http_requests_total
+albion_market_api_http_errors_total
 albion_market_api_http_requests_in_flight
 albion_market_api_http_request_duration_seconds
 ```
 
-Etiquetas permitidas: `method`, `route` y `status`. Las rutas desconocidas se
-agrupan como `unmatched` y los métodos no estándar como `OTHER`; nunca se usa
-la URL ni el método arbitrario como etiqueta.
+`http_requests_total` usa `method`, `route` y `status`;
+`http_errors_total` usa `method`, `route` y la clase acotada `4xx` o `5xx`. Las
+rutas desconocidas se agrupan como `unmatched` y los métodos no estándar como
+`OTHER`; nunca se usa la URL ni el método arbitrario como etiqueta.
+
+### Readiness
+
+```text
+albion_market_api_readiness_ready
+albion_market_api_readiness_checks_total
+albion_market_api_readiness_failures_total
+albion_market_api_readiness_check_duration_seconds
+albion_market_api_readiness_last_success_timestamp_seconds
+albion_market_api_readiness_last_failure_timestamp_seconds
+```
+
+`result` solo admite `success` o `error`. `component` solo admite
+`database_pool`, `database`, `schema` o `unknown`. Esto permite alertar por causa
+sin convertir mensajes de error en labels. Cada scrape de `/metrics` ejecuta una
+comprobación acotada, por lo que el gauge no depende de una consulta previa a
+`/readyz`.
 
 ### Ingesta
 
 ```text
-albion_market_api_ingest_requests_total
+albion_market_api_ingest_batches_total
+albion_market_api_ingest_errors_total
 albion_market_api_ingest_requests_in_flight
+albion_market_api_ingest_entries_received_total
 albion_market_api_ingest_accepted_entries_total
+albion_market_api_ingest_entries_stored_total
+albion_market_api_ingest_entries_rejected_total
+albion_market_api_ingest_entries_duplicate_total
+albion_market_api_ingest_buckets_received_total
 albion_market_api_ingest_accepted_buckets_total
+albion_market_api_ingest_buckets_stored_total
+albion_market_api_ingest_buckets_rejected_total
+albion_market_api_ingest_buckets_duplicate_total
 albion_market_api_ingest_rows_touched_total
 albion_market_api_ingest_request_duration_seconds
 albion_market_api_ingest_last_request_timestamp_seconds
@@ -117,13 +155,21 @@ albion_market_api_ingest_last_error_timestamp_seconds
 ```
 
 La etiqueta `stream` distingue `prices` e `history`; `result` se limita a
-`success`, `duplicate` y `error`.
+`success`, `duplicate` y `error`. Los contadores de recibidas, almacenadas,
+rechazadas y duplicadas permiten distinguir falta de tráfico, idempotencia y
+fallos reales. En historial también se contabilizan buckets.
+
+`albion_market_api_ingest_requests_total` y
+`albion_market_api_ingest_observed_requests_total` se conservan por compatibilidad
+con la primera versión del endpoint.
 
 ### PostgreSQL
 
 ```text
 albion_market_api_database_ready
+albion_market_api_database_pool_acquisition_duration_seconds
 albion_market_api_database_ping_duration_seconds
+albion_market_api_database_pool_utilization_ratio
 albion_market_api_database_pool_max_connections
 albion_market_api_database_pool_total_connections
 albion_market_api_database_pool_acquired_connections
@@ -134,14 +180,24 @@ albion_market_api_database_pool_empty_acquire_total
 albion_market_api_database_pool_canceled_acquire_total
 albion_market_api_database_pool_new_connections_total
 albion_market_api_database_pool_acquire_duration_seconds_total
+albion_market_api_database_pool_acquire_duration_seconds_average
 albion_market_api_database_operations_total
+albion_market_api_database_errors_total
 albion_market_api_database_operation_duration_seconds
+albion_market_api_ingest_copy_duration_seconds
+albion_market_api_ingest_upsert_duration_seconds
+albion_market_api_database_transaction_duration_seconds
 ```
 
-Las operaciones instrumentadas usan un conjunto fijo, por ejemplo
-`ingest_prices`, `ingest_history`, `copy_raw_prices`, `copy_raw_history`,
-`upsert_current_prices`, `upsert_market_history`, `query_current_prices`,
-`query_market_history` y `ping`.
+Las operaciones usan un conjunto fijo. Incluye consultas, ping, adquisición y
+validación de readiness, CopyFrom, upserts y transacciones de ingesta. Las tres
+últimas familias presentan las duraciones críticas con la etiqueta `stream`
+limitada a `prices` o `history`.
+
+`database_pool_acquisition_duration_seconds` mide la adquisición más reciente
+realizada durante el scrape. El acumulado y el promedio del pool permiten detectar
+contención sostenida; `database_pool_utilization_ratio` facilita alertar cerca del
+límite configurado.
 
 ### Proceso y build
 
@@ -172,8 +228,9 @@ token
 mensaje de error
 ```
 
-Los smoke tests comprueban que `/metrics` no contiene las credenciales generadas
-para PostgreSQL o ingesta.
+Los nombres de ruta, resultado, componente y operación pasan por conjuntos
+acotados. Los smoke tests comprueban que `/metrics` no contiene las credenciales
+generadas para PostgreSQL o ingesta.
 
 ## Endpoint detallado de estado
 
@@ -201,4 +258,5 @@ npm run docs:check
 ```
 
 Los tests cubren concurrencia, redacción, formato JSON, etiquetas acotadas,
-separación liveness/readiness y ausencia de secretos en la exposición.
+separación liveness/readiness, migraciones incompletas, caída temporal de
+PostgreSQL, recuperación y ausencia de secretos en la exposición.

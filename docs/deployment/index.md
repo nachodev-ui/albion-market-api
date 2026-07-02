@@ -122,6 +122,11 @@ Invoke-RestMethod http://127.0.0.1:18080/readyz
 (Invoke-WebRequest http://127.0.0.1:18080/metrics).Content
 ```
 
+El `HEALTHCHECK` de la imagen usa `/healthz`: una interrupción breve de PostgreSQL
+no reinicia un proceso HTTP sano. Los balanceadores y orquestadores deben usar
+`/readyz` para retirar tráfico cuando el pool, PostgreSQL o el esquema requerido
+no estén disponibles.
+
 La API se publica únicamente en `127.0.0.1`. Para acceso externo usa un proxy TLS confiable. Mantén `INGEST_REQUIRE_HTTPS=true`; activa `TRUST_PROXY_HEADERS=true` solo cuando el proxy reescriba y controle las cabeceras reenviadas.
 
 ## Secretos en runtime
