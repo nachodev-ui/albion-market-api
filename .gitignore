@@ -27,3 +27,21 @@ Thumbs.db
 secrets/
 *.token
 *.secret
+
+# Reportes locales de auditoría PostgreSQL
+/artifacts/postgres-audit/
+
+# Reportes locales de retencion PostgreSQL
+/artifacts/postgres-retention/
+/artifacts/postgres-retention-test/
+
+# Backups y verificaciones locales de PostgreSQL
+/artifacts/postgres-backups/
+/artifacts/postgres-restore-verification/
+/artifacts/postgres-backup-restore-test/
+
+# Logs de tareas programadas PostgreSQL
+/artifacts/postgres-scheduled-tasks/
+
+# Reportes locales de revisión de índices PostgreSQL
+/artifacts/postgres-index-review/
