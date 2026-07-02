@@ -6,12 +6,15 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "docs:check": "vitepress build docs"
+    "docs:check": "vitepress build docs",
+    "openapi:lint": "redocly lint openapi/openapi.yaml",
+    "contracts:check": "npm run openapi:lint && go test ./internal/contracts -run TestOpenAPI -count=1"
   },
   "devDependencies": {
+    "@redocly/cli": "2.36.0",
     "vitepress": "1.6.4"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0 <21 || >=22.12.0"
   }
 }

@@ -2,6 +2,10 @@
 
 Base local predeterminada: `http://127.0.0.1:8080`.
 
+El contrato máquina legible y su auditoría inicial están en
+[Contrato OpenAPI](./openapi.md). La fuente canónica es
+`openapi/openapi.yaml`.
+
 ## Resumen
 
 | Método | Ruta | Autenticación | Descripción |

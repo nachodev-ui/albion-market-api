@@ -1,6 +1,7 @@
 # Albion Market API
 
 [![Quality checks](https://github.com/nachodev-ui/albion-market-api/actions/workflows/quality.yml/badge.svg?branch=develop)](https://github.com/nachodev-ui/albion-market-api/actions/workflows/quality.yml)
+[![API contracts](https://github.com/nachodev-ui/albion-market-api/actions/workflows/contracts.yml/badge.svg?branch=develop)](https://github.com/nachodev-ui/albion-market-api/actions/workflows/contracts.yml)
 [![Documentation](https://github.com/nachodev-ui/albion-market-api/actions/workflows/documentation.yml/badge.svg?branch=main)](https://github.com/nachodev-ui/albion-market-api/actions/workflows/documentation.yml)
 
 API centralizada en Go para recibir, consolidar y servir precios e historial de mercado de Albion Online mediante PostgreSQL.
@@ -77,7 +78,8 @@ Invoke-RestMethod http://127.0.0.1:8080/healthz
 go test ./...
 go vet ./...
 go build ./cmd/api
-npm install
+npm ci
+npm run contracts:check
 npm run docs:dev
 ```
 
