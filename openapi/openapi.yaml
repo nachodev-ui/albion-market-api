@@ -1,0 +1,1435 @@
+openapi: 3.1.1
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: Albion Market API
+  version: 1.0.0
+  summary: Contrato HTTP v1 para precios e historial de mercado de Albion Online.
+  description: |
+    Contrato auditable de la implementación HTTP actual de `albion-market-api`.
+
+    Las rutas públicas de lectura usan claves estables `marketKey` y no exponen
+    los `location_id` internos. Las rutas de ingesta son contratos internos
+    autenticados mediante Bearer token y conservan nombres JSON en `snake_case`.
+
+    El prefijo `/api/v1` constituye la versión mayor del contrato HTTP. La ruta
+    `/healthz` queda fuera del prefijo porque es una sonda operacional.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Servidor local predeterminado
+tags:
+  - name: Health
+    description: Sondas operacionales.
+  - name: Status
+    description: Estado detallado y métricas en memoria.
+  - name: Markets
+    description: Catálogo público de mercados.
+  - name: Prices
+    description: Lectura pública de precios actuales.
+  - name: History
+    description: Lectura pública de historial de mercado.
+  - name: Ingest
+    description: Ingesta interna autenticada e idempotente.
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      security: []
+      summary: Comprobar salud de API y PostgreSQL
+      description: |
+        Ejecuta un ping al repositorio. Esta ruta no está sujeta al limitador
+        global por IP. Cuando la petición alcanza el handler, la respuesta incluye
+        `Cache-Control: no-store`.
+      responses:
+        '200':
+          description: API y PostgreSQL disponibles.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOK'
+              example:
+                status: ok
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedGet'
+        '503':
+          description: PostgreSQL no está disponible.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthUnavailable'
+              example:
+                status: error
+                error: service unavailable
+
+  /api/v1/status:
+    get:
+      tags: [Status]
+      operationId: getStatus
+      security: []
+      summary: Consultar estado y métricas del proceso
+      description: |
+        Devuelve uptime, salud y pool PostgreSQL, además de métricas separadas
+        para ingesta de precios e historial. Una base no disponible conserva el
+        mismo cuerpo y cambia el estado HTTP a `503`.
+      responses:
+        '200':
+          description: Servicio operativo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: Servicio degradado porque PostgreSQL no está disponible.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/v1/markets:
+    get:
+      tags: [Markets]
+      operationId: listMarkets
+      security: []
+      summary: Listar el catálogo público de mercados
+      parameters:
+        - name: includeDisabled
+          in: query
+          required: false
+          description: Incluye mercados publicados pero no habilitados para consultas.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Catálogo ordenado alfabéticamente por nombre.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketCatalogResponse'
+              example:
+                schemaVersion: 1
+                count: 7
+                data:
+                  - key: brecilien
+                    name: Brecilien
+                    type: regular
+                    enabled: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedGet'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/prices:
+    get:
+      tags: [Prices]
+      operationId: getCurrentPrices
+      security: []
+      summary: Consultar precios actuales con parámetros simples
+      description: |
+        Ruta compatible con el contrato simple del receiver local. Para varios
+        mercados o calidades mezcladas debe preferirse `POST /api/v1/prices/query`.
+
+        Las combinaciones sin datos se omiten de `data`.
+      parameters:
+        - $ref: '#/components/parameters/ServerQuery'
+        - $ref: '#/components/parameters/MarketKeyQuery'
+        - name: itemIds
+          in: query
+          required: true
+          description: Identificadores de objetos separados por comas.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            items:
+              $ref: '#/components/schemas/ItemIdentifier'
+          example: [T4_BAG, T5_MAIN_SWORD]
+        - $ref: '#/components/parameters/QualityQuery'
+      responses:
+        '200':
+          description: Precios encontrados para la matriz solicitada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceQueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedGet'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/prices/query:
+    post:
+      tags: [Prices]
+      operationId: queryCurrentPrices
+      security: []
+      summary: Consultar precios actuales en batch
+      description: |
+        Acepta hasta 32 mercados y 2000 pares objeto/calidad. Mercados y pares
+        repetidos se deduplican conservando el orden lógico de la solicitud.
+        Los campos JSON desconocidos son rechazados.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceQueryRequest'
+            example:
+              server: west
+              marketKeys: [martlock, fort_sterling]
+              entries:
+                - itemIdentifier: T4_BAG
+                  quality: 1
+                - itemIdentifier: T5_MAIN_SWORD
+                  quality: 3
+      responses:
+        '200':
+          description: Precios encontrados para la matriz solicitada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceQueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedPost'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/history:
+    get:
+      tags: [History]
+      operationId: getMarketHistory
+      security: []
+      summary: Consultar historial con parámetros simples
+      description: |
+        Ruta compatible con el receiver local. Puede usarse `period` o el par
+        `rangeStart`/`rangeEnd`. Si se entrega cualquier fecha explícita, ambas
+        son obligatorias y `period` deja de intervenir.
+
+        Sin rango explícito, `period` usa días UTC completados y termina en el
+        día anterior a la fecha UTC actual. `limit` se valida por compatibilidad,
+        pero la implementación actual no limita el número de series ni buckets.
+      parameters:
+        - $ref: '#/components/parameters/ServerQuery'
+        - $ref: '#/components/parameters/MarketKeyQuery'
+        - name: itemId
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/ItemIdentifier'
+        - $ref: '#/components/parameters/QualityQuery'
+        - name: period
+          in: query
+          required: false
+          description: Periodo predefinido usado cuando no se entrega un rango explícito.
+          schema:
+            type: string
+            enum: [7-days, 4-weeks]
+            default: 4-weeks
+        - name: rangeStart
+          in: query
+          required: false
+          description: Fecha UTC inicial inclusiva; debe enviarse junto con `rangeEnd`.
+          schema:
+            $ref: '#/components/schemas/UTCDate'
+        - name: rangeEnd
+          in: query
+          required: false
+          description: Fecha UTC final inclusiva; debe enviarse junto con `rangeStart`.
+          schema:
+            $ref: '#/components/schemas/UTCDate'
+        - name: limit
+          in: query
+          required: false
+          description: Se valida como entero positivo, pero actualmente no altera el resultado.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Series históricas encontradas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryQueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedGet'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/history/query:
+    post:
+      tags: [History]
+      operationId: queryMarketHistory
+      security: []
+      summary: Consultar historial en batch
+      description: |
+        Acepta hasta 32 mercados, 2000 pares objeto/calidad y un rango inclusivo
+        máximo de 366 días. Mercados y pares repetidos se deduplican. Los campos
+        JSON desconocidos son rechazados.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HistoryQueryRequest'
+            example:
+              server: west
+              marketKeys: [martlock, fort_sterling]
+              entries:
+                - itemIdentifier: T5_LEATHER_LEVEL4@4
+                  quality: 1
+              rangeStart: '2026-06-01'
+              rangeEnd: '2026-06-25'
+      responses:
+        '200':
+          description: Series históricas encontradas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryQueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedPost'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/ingest/prices:
+    post:
+      tags: [Ingest]
+      operationId: ingestPrices
+      summary: Ingerir precios actuales
+      description: |
+        Contrato interno idempotente. Un `request_id` nuevo responde `202`; el
+        mismo UUID con el mismo payload ya completado responde `200`; reutilizar
+        el UUID con otro payload o mientras sigue procesándose responde `409`.
+
+        El cuerpo puede enviarse sin compresión, con `Content-Encoding: identity`
+        o con `Content-Encoding: gzip`. Todas las respuestas emitidas por el
+        handler incluyen `Cache-Control: no-store`.
+
+        La implementación actual solo valida `request_id`, `server` y que
+        `entries` no esté vacío antes del repositorio. Por eso las propiedades
+        internas de cada entrada se describen, pero no se marcan como requeridas
+        en este contrato de estado actual.
+      security:
+        - ingestBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ContentEncoding'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestPricesRequest'
+            example:
+              request_id: 00112233-4455-6677-8899-aabbccddeeff
+              server: west
+              entries:
+                - observed_at: '2026-06-26T20:00:00Z'
+                  location_id: 4002
+                  item_key: T4_PLANKS_LEVEL4@4
+                  quality: 1
+                  sell_price_min: 1234
+                  sell_price_min_at: '2026-06-26T19:59:50Z'
+                  buy_price_max: null
+                  buy_price_max_at: null
+      responses:
+        '200':
+          description: El mismo request y payload ya había sido procesado.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestPricesDuplicateResponse'
+        '202':
+          description: Batch nuevo aceptado y procesado.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestPricesAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/IngestBadRequest'
+        '401':
+          $ref: '#/components/responses/IngestUnauthorized'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/IngestMethodNotAllowedPost'
+        '409':
+          $ref: '#/components/responses/IngestConflict'
+        '413':
+          $ref: '#/components/responses/IngestPayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/IngestUnsupportedMediaType'
+        '426':
+          $ref: '#/components/responses/IngestHTTPSRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/IngestInternalServerError'
+
+  /api/v1/ingest/history:
+    post:
+      tags: [Ingest]
+      operationId: ingestHistory
+      summary: Ingerir historial de mercado
+      description: |
+        Contrato interno idempotente. Admite hasta 2000 capturas y hasta 100000
+        buckets totales por request, además del límite de bytes configurado.
+        `average_unit_price: 0` se normaliza a `null`.
+
+        El cuerpo puede enviarse sin compresión, con `Content-Encoding: identity`
+        o con `Content-Encoding: gzip`. Todas las respuestas emitidas por el
+        handler incluyen `Cache-Control: no-store`.
+      security:
+        - ingestBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ContentEncoding'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestHistoryRequest'
+            example:
+              request_id: 00112233-4455-6677-8899-aabbccddeeff
+              server: west
+              entries:
+                - observed_at: '2026-06-26T20:00:00Z'
+                  location_id: 4002
+                  item_key: T5_LEATHER_LEVEL4@4
+                  quality: 1
+                  history:
+                    - timestamp: '2026-06-25T00:00:00Z'
+                      item_count: 42
+                      average_unit_price: 18750
+      responses:
+        '200':
+          description: El mismo request y payload ya había sido procesado.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestHistoryDuplicateResponse'
+        '202':
+          description: Batch nuevo aceptado y procesado.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestHistoryAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/IngestBadRequest'
+        '401':
+          $ref: '#/components/responses/IngestUnauthorized'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/IngestMethodNotAllowedPost'
+        '409':
+          $ref: '#/components/responses/IngestConflict'
+        '413':
+          $ref: '#/components/responses/IngestPayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/IngestUnsupportedMediaType'
+        '426':
+          $ref: '#/components/responses/IngestHTTPSRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/IngestInternalServerError'
+
+components:
+  securitySchemes:
+    ingestBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Token interno configurado para el receiver/forwarder.
+
+  parameters:
+    ServerQuery:
+      name: server
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Server'
+    MarketKeyQuery:
+      name: marketKey
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/EnabledMarketKey'
+    QualityQuery:
+      name: quality
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Quality'
+    ContentEncoding:
+      name: Content-Encoding
+      in: header
+      required: false
+      description: Codificación del cuerpo antes de aplicar el límite de bytes descomprimidos.
+      schema:
+        type: string
+        enum: [identity, gzip]
+        default: identity
+
+  headers:
+    NoStore:
+      description: Impide almacenar respuestas operacionales o de ingesta.
+      schema:
+        type: string
+        const: no-store
+    AllowGet:
+      description: Método permitido por la ruta.
+      schema:
+        type: string
+        const: GET
+    AllowPost:
+      description: Método permitido por la ruta.
+      schema:
+        type: string
+        const: POST
+    BearerChallenge:
+      description: Desafío Bearer de la zona de ingesta.
+      schema:
+        type: string
+        const: 'Bearer realm="ingest"'
+    UpgradeTLS:
+      description: Transporte requerido cuando la política HTTPS está activa.
+      schema:
+        type: string
+        const: TLS/1.2
+    RateLimitLimit:
+      description: Capacidad burst configurada para el cliente.
+      schema:
+        type: integer
+        minimum: 1
+    RateLimitRemaining:
+      description: Tokens restantes en el bucket del cliente.
+      schema:
+        type: integer
+        minimum: 0
+    RetryAfter:
+      description: Segundos mínimos antes de reintentar.
+      schema:
+        type: integer
+        minimum: 1
+
+  responses:
+    BadRequest:
+      description: Parámetros, JSON o reglas de negocio inválidos.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    OriginNotAllowed:
+      description: El header `Origin` no pertenece a la lista CORS permitida.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: origin not allowed
+    MethodNotAllowed:
+      description: Método HTTP no permitido.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: method not allowed
+    MethodNotAllowedGet:
+      description: Método HTTP no permitido.
+      headers:
+        Allow:
+          $ref: '#/components/headers/AllowGet'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: method not allowed
+    MethodNotAllowedPost:
+      description: Método HTTP no permitido.
+      headers:
+        Allow:
+          $ref: '#/components/headers/AllowPost'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: method not allowed
+    PayloadTooLarge:
+      description: El cuerpo supera el máximo público configurado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: request body too large
+    UnsupportedMediaType:
+      description: El `Content-Type` no es JSON.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: content type must be application/json
+    RateLimited:
+      description: El limitador por IP no tiene tokens disponibles.
+      headers:
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: rate limit exceeded
+    InternalServerError:
+      description: Error interno sin detalles sensibles.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: internal server error
+    IngestBadRequest:
+      description: JSON, gzip o contrato de ingesta inválido.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestErrorResponse'
+    IngestUnauthorized:
+      description: Bearer token ausente, mal formado o inválido.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        WWW-Authenticate:
+          $ref: '#/components/headers/BearerChallenge'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestErrorResponse'
+          example:
+            error: unauthorized
+    IngestMethodNotAllowedPost:
+      description: Método HTTP no permitido.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Allow:
+          $ref: '#/components/headers/AllowPost'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestErrorResponse'
+          example:
+            error: method not allowed
+    IngestConflict:
+      description: Request en proceso o UUID reutilizado con otro payload.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestErrorResponse'
+          examples:
+            processing:
+              value:
+                error: request_id is already processing
+                request_id: 00112233-4455-6677-8899-aabbccddeeff
+            payloadConflict:
+              value:
+                error: request_id was already used with a different payload
+                request_id: 00112233-4455-6677-8899-aabbccddeeff
+    IngestPayloadTooLarge:
+      description: El cuerpo comprimido o descomprimido supera el máximo configurado.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestErrorResponse'
+          example:
+            error: request body too large
+    IngestUnsupportedMediaType:
+      description: "`Content-Type` o `Content-Encoding` no compatible."
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestErrorResponse'
+    IngestHTTPSRequired:
+      description: La política de ingesta exige HTTPS y la solicitud no fue reconocida como segura.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Upgrade:
+          $ref: '#/components/headers/UpgradeTLS'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestErrorResponse'
+          example:
+            error: https required
+    IngestInternalServerError:
+      description: Error interno sin detalles sensibles.
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestErrorResponse'
+          example:
+            error: internal server error
+            request_id: 00112233-4455-6677-8899-aabbccddeeff
+
+  schemas:
+    Server:
+      type: string
+      enum: [west, east, europe]
+    Quality:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 5
+    ItemIdentifier:
+      type: string
+      minLength: 1
+      examples: [T4_BAG, T5_LEATHER_LEVEL4@4]
+    UTCDate:
+      type: string
+      format: date
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+    EnabledMarketKey:
+      type: string
+      enum:
+        - bridgewatch
+        - martlock
+        - lymhurst
+        - fort_sterling
+        - thetford
+        - caerleon
+        - brecilien
+    MarketKey:
+      type: string
+      enum:
+        - bridgewatch
+        - martlock
+        - lymhurst
+        - fort_sterling
+        - thetford
+        - caerleon
+        - brecilien
+        - black_market
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+    IngestErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+        request_id:
+          type: string
+          minLength: 1
+    HealthOK:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    HealthUnavailable:
+      type: object
+      additionalProperties: false
+      required: [status, error]
+      properties:
+        status:
+          type: string
+          const: error
+        error:
+          type: string
+          const: service unavailable
+    MarketDefinition:
+      type: object
+      additionalProperties: false
+      required: [key, name, type, enabled]
+      properties:
+        key:
+          $ref: '#/components/schemas/MarketKey'
+        name:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [regular, black-market]
+        enabled:
+          type: boolean
+    MarketCatalogResponse:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, count, data]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        count:
+          type: integer
+          minimum: 0
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketDefinition'
+    PriceQueryEntry:
+      type: object
+      additionalProperties: false
+      required: [itemIdentifier, quality]
+      properties:
+        itemIdentifier:
+          $ref: '#/components/schemas/ItemIdentifier'
+        quality:
+          $ref: '#/components/schemas/Quality'
+    PriceQueryRequest:
+      type: object
+      additionalProperties: false
+      required: [server, marketKeys, entries]
+      properties:
+        server:
+          $ref: '#/components/schemas/Server'
+        marketKeys:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/EnabledMarketKey'
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/PriceQueryEntry'
+    CurrentPrice:
+      type: object
+      additionalProperties: false
+      required:
+        - server
+        - marketKey
+        - itemIdentifier
+        - quality
+        - sellPriceMin
+        - sellPriceMinDate
+        - buyPriceMax
+        - buyPriceMaxDate
+        - updatedAt
+      properties:
+        server:
+          $ref: '#/components/schemas/Server'
+        marketKey:
+          $ref: '#/components/schemas/EnabledMarketKey'
+        itemIdentifier:
+          $ref: '#/components/schemas/ItemIdentifier'
+        quality:
+          $ref: '#/components/schemas/Quality'
+        sellPriceMin:
+          type: [integer, 'null']
+          format: int64
+        sellPriceMinDate:
+          type: [string, 'null']
+          format: date-time
+        buyPriceMax:
+          type: [integer, 'null']
+          format: int64
+        buyPriceMaxDate:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PriceQueryResponse:
+      type: object
+      additionalProperties: false
+      required: [requestedAt, count, data]
+      properties:
+        requestedAt:
+          type: string
+          format: date-time
+        count:
+          type: integer
+          minimum: 0
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CurrentPrice'
+    HistoryQueryEntry:
+      type: object
+      additionalProperties: false
+      required: [itemIdentifier, quality]
+      properties:
+        itemIdentifier:
+          $ref: '#/components/schemas/ItemIdentifier'
+        quality:
+          $ref: '#/components/schemas/Quality'
+    HistoryQueryRequest:
+      type: object
+      additionalProperties: false
+      required: [server, marketKeys, entries, rangeStart, rangeEnd]
+      properties:
+        server:
+          $ref: '#/components/schemas/Server'
+        marketKeys:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/EnabledMarketKey'
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/HistoryQueryEntry'
+        rangeStart:
+          $ref: '#/components/schemas/UTCDate'
+        rangeEnd:
+          $ref: '#/components/schemas/UTCDate'
+    MarketHistoryPoint:
+      type: object
+      additionalProperties: false
+      required: [timestamp, itemCount, averageUnitPrice]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        itemCount:
+          type: integer
+          format: int64
+          minimum: 0
+        averageUnitPrice:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+    MarketHistorySeries:
+      type: object
+      additionalProperties: false
+      required: [server, marketKey, itemIdentifier, quality, history]
+      properties:
+        server:
+          $ref: '#/components/schemas/Server'
+        marketKey:
+          $ref: '#/components/schemas/EnabledMarketKey'
+        itemIdentifier:
+          $ref: '#/components/schemas/ItemIdentifier'
+        quality:
+          $ref: '#/components/schemas/Quality'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketHistoryPoint'
+    HistoryQueryResponse:
+      type: object
+      additionalProperties: false
+      required: [requestedAt, rangeStart, rangeEnd, count, bucketCount, data]
+      properties:
+        requestedAt:
+          type: string
+          format: date-time
+        rangeStart:
+          $ref: '#/components/schemas/UTCDate'
+        rangeEnd:
+          $ref: '#/components/schemas/UTCDate'
+        count:
+          type: integer
+          minimum: 0
+        bucketCount:
+          type: integer
+          minimum: 0
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketHistorySeries'
+    PriceIngest:
+      type: object
+      additionalProperties: false
+      description: |
+        Forma JSON actual. Ninguna propiedad se marca requerida porque la capa
+        de servicio de precios no realiza todavía validación por entrada.
+      properties:
+        observed_at:
+          type: string
+          format: date-time
+        location_id:
+          type: integer
+          format: int32
+          minimum: -32768
+          maximum: 32767
+        item_key:
+          type: string
+        quality:
+          type: integer
+          format: int32
+          minimum: -32768
+          maximum: 32767
+        sell_price_min:
+          type: [integer, 'null']
+          format: int64
+        sell_price_min_at:
+          type: [string, 'null']
+          format: date-time
+        buy_price_max:
+          type: [integer, 'null']
+          format: int64
+        buy_price_max_at:
+          type: [string, 'null']
+          format: date-time
+    IngestPricesRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, server, entries]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        server:
+          $ref: '#/components/schemas/Server'
+        entries:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PriceIngest'
+    IngestPricesResponseBase:
+      type: object
+      additionalProperties: false
+      required: [request_id, accepted, current_rows_touched, duplicate]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        accepted:
+          type: integer
+          minimum: 0
+        current_rows_touched:
+          type: integer
+          format: int64
+          minimum: 0
+        duplicate:
+          type: boolean
+    IngestPricesAcceptedResponse:
+      allOf:
+        - $ref: '#/components/schemas/IngestPricesResponseBase'
+        - type: object
+          properties:
+            duplicate:
+              const: false
+    IngestPricesDuplicateResponse:
+      allOf:
+        - $ref: '#/components/schemas/IngestPricesResponseBase'
+        - type: object
+          properties:
+            duplicate:
+              const: true
+    HistoryBucketIngest:
+      type: object
+      additionalProperties: false
+      required: [timestamp]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        item_count:
+          type: integer
+          format: int64
+          minimum: 0
+        average_unit_price:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+          description: El valor cero es aceptado y se normaliza a `null`.
+    HistoryIngest:
+      type: object
+      additionalProperties: false
+      required: [observed_at, location_id, item_key, quality, history]
+      properties:
+        observed_at:
+          type: string
+          format: date-time
+        location_id:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 32767
+        item_key:
+          type: string
+          minLength: 1
+        quality:
+          $ref: '#/components/schemas/Quality'
+        history:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/HistoryBucketIngest'
+    IngestHistoryRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, server, entries]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        server:
+          $ref: '#/components/schemas/Server'
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          description: La suma de todos los arreglos `history` no puede exceder 100000 buckets.
+          items:
+            $ref: '#/components/schemas/HistoryIngest'
+    IngestHistoryResponseBase:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - accepted_entries
+        - accepted_buckets
+        - history_rows_touched
+        - duplicate
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        accepted_entries:
+          type: integer
+          minimum: 0
+        accepted_buckets:
+          type: integer
+          minimum: 0
+        history_rows_touched:
+          type: integer
+          format: int64
+          minimum: 0
+        duplicate:
+          type: boolean
+    IngestHistoryAcceptedResponse:
+      allOf:
+        - $ref: '#/components/schemas/IngestHistoryResponseBase'
+        - type: object
+          properties:
+            duplicate:
+              const: false
+    IngestHistoryDuplicateResponse:
+      allOf:
+        - $ref: '#/components/schemas/IngestHistoryResponseBase'
+        - type: object
+          properties:
+            duplicate:
+              const: true
+    StatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - service
+        - environment
+        - started_at
+        - now
+        - uptime_seconds
+        - database
+        - ingest
+        - history_ingest
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        service:
+          type: string
+        environment:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        now:
+          type: string
+          format: date-time
+        uptime_seconds:
+          type: integer
+          format: int64
+        database:
+          $ref: '#/components/schemas/DatabaseStatus'
+        ingest:
+          $ref: '#/components/schemas/IngestMetricsStatus'
+        history_ingest:
+          $ref: '#/components/schemas/HistoryIngestMetricsStatus'
+    DatabaseStatus:
+      type: object
+      additionalProperties: false
+      required: [status, ping_latency_ms, pool]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+        ping_latency_ms:
+          type: number
+          minimum: 0
+        pool:
+          $ref: '#/components/schemas/DatabasePoolStatus'
+    DatabasePoolStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - max_connections
+        - total_connections
+        - acquired_connections
+        - idle_connections
+        - constructing_connections
+        - acquire_count
+        - empty_acquire_count
+        - canceled_acquire_count
+        - new_connections_count
+        - acquire_duration_ms
+      properties:
+        max_connections:
+          type: integer
+          format: int32
+          minimum: 0
+        total_connections:
+          type: integer
+          format: int32
+          minimum: 0
+        acquired_connections:
+          type: integer
+          format: int32
+          minimum: 0
+        idle_connections:
+          type: integer
+          format: int32
+          minimum: 0
+        constructing_connections:
+          type: integer
+          format: int32
+          minimum: 0
+        acquire_count:
+          type: integer
+          format: int64
+          minimum: 0
+        empty_acquire_count:
+          type: integer
+          format: int64
+          minimum: 0
+        canceled_acquire_count:
+          type: integer
+          format: int64
+          minimum: 0
+        new_connections_count:
+          type: integer
+          format: int64
+          minimum: 0
+        acquire_duration_ms:
+          type: number
+          minimum: 0
+    IngestMetricsStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - requests_total
+        - in_flight
+        - succeeded_total
+        - duplicates_total
+        - errors_total
+        - accepted_entries_total
+        - current_rows_touched_total
+        - average_duration_ms
+        - last_duration_ms
+        - max_duration_ms
+        - last_request_at
+        - last_success_at
+        - last_error_at
+        - last_error_kind
+      properties:
+        requests_total:
+          type: integer
+          minimum: 0
+        in_flight:
+          type: integer
+          minimum: 0
+        succeeded_total:
+          type: integer
+          minimum: 0
+        duplicates_total:
+          type: integer
+          minimum: 0
+        errors_total:
+          type: integer
+          minimum: 0
+        accepted_entries_total:
+          type: integer
+          minimum: 0
+        current_rows_touched_total:
+          type: integer
+          minimum: 0
+        average_duration_ms:
+          type: number
+          minimum: 0
+        last_duration_ms:
+          type: number
+          minimum: 0
+        max_duration_ms:
+          type: number
+          minimum: 0
+        last_request_at:
+          type: [string, 'null']
+          format: date-time
+        last_success_at:
+          type: [string, 'null']
+          format: date-time
+        last_error_at:
+          type: [string, 'null']
+          format: date-time
+        last_error_kind:
+          type: string
+    HistoryIngestMetricsStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - requests_total
+        - in_flight
+        - succeeded_total
+        - duplicates_total
+        - errors_total
+        - accepted_entries_total
+        - accepted_buckets_total
+        - history_rows_touched_total
+        - average_duration_ms
+        - last_duration_ms
+        - max_duration_ms
+        - last_request_at
+        - last_success_at
+        - last_error_at
+        - last_error_kind
+      properties:
+        requests_total:
+          type: integer
+          minimum: 0
+        in_flight:
+          type: integer
+          minimum: 0
+        succeeded_total:
+          type: integer
+          minimum: 0
+        duplicates_total:
+          type: integer
+          minimum: 0
+        errors_total:
+          type: integer
+          minimum: 0
+        accepted_entries_total:
+          type: integer
+          minimum: 0
+        accepted_buckets_total:
+          type: integer
+          minimum: 0
+        history_rows_touched_total:
+          type: integer
+          minimum: 0
+        average_duration_ms:
+          type: number
+          minimum: 0
+        last_duration_ms:
+          type: number
+          minimum: 0
+        max_duration_ms:
+          type: number
+          minimum: 0
+        last_request_at:
+          type: [string, 'null']
+          format: date-time
+        last_success_at:
+          type: [string, 'null']
+          format: date-time
+        last_error_at:
+          type: [string, 'null']
+          format: date-time
+        last_error_kind:
+          type: string

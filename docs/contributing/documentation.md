@@ -13,13 +13,14 @@ La documentación sigue el principio **docs as code**: Markdown versionado, revi
 ## Desarrollo local
 
 ```powershell
-npm install
+npm ci
 npm run docs:dev
 ```
 
-Validación de producción:
+Validación de producción y contratos:
 
 ```powershell
+npm run openapi:lint
 npm run docs:build
 npm run docs:preview
 ```
@@ -42,6 +43,6 @@ npm run docs:preview
 2. Añade la página al sidebar si debe ser descubrible.
 3. Usa enlaces relativos entre páginas del portal.
 4. No copies documentación dentro de carpetas de código.
-5. Ejecuta `npm run docs:build` antes de hacer push.
+5. Ejecuta `npm run openapi:lint` y `npm run docs:build` antes de hacer push.
 
 El workflow `documentation.yml` valida cada cambio relevante y despliega a GitHub Pages únicamente desde `main`.

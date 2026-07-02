@@ -1,0 +1,9 @@
+extends:
+  - recommended
+
+apis:
+  market@v1:
+    root: ./openapi/openapi.yaml
+
+rules:
+  info-license: off

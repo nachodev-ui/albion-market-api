@@ -38,6 +38,7 @@ export default defineConfig({
         text: 'API HTTP',
         items: [
           { text: 'Referencia de endpoints', link: '/api/endpoints' },
+          { text: 'Contrato OpenAPI', link: '/api/openapi' },
           { text: 'Integración con frontend', link: '/api/frontend-consumption' },
           { text: 'Historial centralizado', link: '/api/market-history' }
         ]
@@ -66,6 +67,7 @@ export default defineConfig({
           { text: 'Seguridad', link: '/security/' },
           { text: 'Secretos y autenticación', link: '/security/secrets' },
           { text: 'Pruebas', link: '/testing/' },
+          { text: 'Contratos OpenAPI', link: '/testing/contracts' },
           { text: 'End-to-end', link: '/testing/end-to-end' }
         ]
       },
