@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Albion Market API">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <ellipse cx="32" cy="18" rx="18" ry="7" fill="none" stroke="#fff" stroke-width="4"/>
+  <path d="M14 18v14c0 4 8 7 18 7s18-3 18-7V18M14 32v14c0 4 8 7 18 7s18-3 18-7V32" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+</svg>

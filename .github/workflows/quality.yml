@@ -35,6 +35,22 @@ jobs:
             exit 1
           fi
 
+      - name: Validate repository structure
+        shell: bash
+        run: |
+          stray_docs="$(find . -maxdepth 1 -type f -name '*.md' ! -name 'README.md' -print)"
+          if [[ -n "$stray_docs" ]]; then
+            printf 'Long-form documentation must live under docs/:\n%s\n' "$stray_docs"
+            exit 1
+          fi
+
+          invalid_migrations="$(find migrations -mindepth 1 -maxdepth 1 \
+            \( ! -type f -o -type f ! -name '*.sql' \) -print 2>/dev/null || true)"
+          if [[ -n "$invalid_migrations" ]]; then
+            printf 'migrations/ may contain only SQL migration files:\n%s\n' "$invalid_migrations"
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
