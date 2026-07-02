@@ -69,6 +69,12 @@ func main() {
 	historyIngestMetrics := observability.NewHistoryIngestMetrics()
 	httpMetrics := observability.NewHTTPMetrics()
 	databaseMonitor := observability.NewPgxDatabaseMonitor(dbpool)
+	readinessMetrics := observability.NewReadinessMetrics()
+	readinessChecker := observability.NewPgxReadinessChecker(
+		dbpool,
+		databaseMetrics,
+		readinessMetrics,
+	)
 
 	authenticator, err := ingestauth.New(cfg.IngestCredentials, ingestauth.Options{
 		RequireHTTPS:      cfg.IngestRequireHTTPS,
@@ -83,18 +89,20 @@ func main() {
 		return
 	}
 
-	healthHandler := handlers.NewHealthHandler(svc)
+	healthHandler := handlers.NewHealthHandler(readinessChecker)
 	metricsHandler := handlers.NewMetricsHandler(observability.NewPrometheusExporter(observability.PrometheusExporterOptions{
-		Service:       serviceName,
-		Environment:   cfg.AppEnv,
-		Version:       version,
-		Revision:      revision,
-		StartedAt:     startedAt,
-		HTTP:          httpMetrics,
-		Database:      databaseMetrics,
-		DatabasePool:  databaseMonitor,
-		Ingest:        ingestMetrics,
-		HistoryIngest: historyIngestMetrics,
+		Service:          serviceName,
+		Environment:      cfg.AppEnv,
+		Version:          version,
+		Revision:         revision,
+		StartedAt:        startedAt,
+		HTTP:             httpMetrics,
+		Database:         databaseMetrics,
+		DatabasePool:     databaseMonitor,
+		Ingest:           ingestMetrics,
+		HistoryIngest:    historyIngestMetrics,
+		Readiness:        readinessMetrics,
+		ReadinessChecker: readinessChecker,
 	}))
 	ingestHandler := handlers.NewIngestHandler(
 		svc,

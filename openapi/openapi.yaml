@@ -66,11 +66,13 @@ paths:
       security: []
       summary: Comprobar que la API está lista para recibir tráfico
       description: |
-        Ejecuta un ping PostgreSQL con timeout acotado. Esta ruta no está sujeta
-        al limitador global por IP y no expone el error interno de infraestructura.
+        Adquiere una conexión del pool, comprueba que PostgreSQL responda y valida
+        que las relaciones requeridas y la versión mínima del esquema estén
+        disponibles. Esta ruta usa un timeout acotado, no está sujeta al limitador
+        global por IP y no expone errores internos de infraestructura.
       responses:
         '200':
-          description: API y PostgreSQL disponibles.
+          description: API, pool PostgreSQL y esquema requeridos disponibles.
           headers:
             Cache-Control:
               $ref: '#/components/headers/NoStore'
@@ -85,7 +87,7 @@ paths:
         '405':
           $ref: '#/components/responses/MethodNotAllowedGet'
         '503':
-          description: PostgreSQL no está disponible dentro del timeout.
+          description: El pool, PostgreSQL o el esquema requerido no están disponibles.
           headers:
             Cache-Control:
               $ref: '#/components/headers/NoStore'
@@ -104,8 +106,8 @@ paths:
       security: []
       summary: Exponer métricas Prometheus del proceso
       description: |
-        Expone métricas de HTTP, ingesta, PostgreSQL, runtime Go y build usando
-        etiquetas de cardinalidad acotada. No incluye request IDs, item IDs,
+        Expone métricas de HTTP, readiness, ingesta, PostgreSQL, runtime Go y
+        build usando etiquetas de cardinalidad acotada. No incluye request IDs, item IDs,
         ubicaciones, tokens ni textos completos de error. Esta ruta no está sujeta
         al limitador global por IP.
       responses:

@@ -31,6 +31,12 @@ func (routerRepository) QueryCurrentPrices(context.Context, domain.CurrentPriceL
 	return []domain.CurrentPrice{}, nil
 }
 
+type routerReadinessChecker struct{}
+
+func (routerReadinessChecker) Check(context.Context) observability.ReadinessSnapshot {
+	return observability.ReadinessSnapshot{Ready: true}
+}
+
 type routerDatabaseMonitor struct{}
 
 func (routerDatabaseMonitor) Snapshot(context.Context) observability.DatabaseSnapshot {
@@ -59,7 +65,7 @@ func newTestRouter(t *testing.T) http.Handler {
 	}))
 
 	return NewRouter(
-		handlers.NewHealthHandler(marketService),
+		handlers.NewHealthHandler(routerReadinessChecker{}),
 		handlers.NewIngestHandler(marketService, routerAuthenticator(t), 1<<20, metrics, nil, historyMetrics),
 		handlers.NewPricesHandler(marketService, 1<<20),
 		handlers.NewHistoryHandler(marketService, 1<<20),
