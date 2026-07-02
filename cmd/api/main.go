@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -12,71 +12,146 @@ import (
 
 	"github.com/nachodev-ui/albion-market-api/internal/config"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
+	"github.com/nachodev-ui/albion-market-api/internal/observability"
 	"github.com/nachodev-ui/albion-market-api/internal/repository"
 	"github.com/nachodev-ui/albion-market-api/internal/server"
 	"github.com/nachodev-ui/albion-market-api/internal/service"
 )
 
+const serviceName = "albion-market-api"
+
 func main() {
+	bootstrapLogger := observability.NewLogger(os.Stdout, "auto")
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		bootstrapLogger.Error("config.load_failed", observability.F("error", err))
+		return
 	}
+	logger := observability.NewLogger(os.Stdout, cfg.LogColor)
+	startedAt := time.Now().UTC()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	dbpool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("create pgx pool: %v", err)
+		logger.Error("database.pool_create_failed", observability.F("error", err))
+		return
 	}
 	defer dbpool.Close()
 
+	pingStarted := time.Now()
 	if err := dbpool.Ping(ctx); err != nil {
-		log.Fatalf("ping database: %v", err)
+		logger.Error(
+			"database.ping_failed",
+			observability.F("duration_ms", durationMilliseconds(time.Since(pingStarted))),
+			observability.F("error", err),
+		)
+		return
 	}
+	logger.Success(
+		"database.connected",
+		observability.F("duration_ms", durationMilliseconds(time.Since(pingStarted))),
+		observability.F("max_connections", dbpool.Stat().MaxConns()),
+	)
 
 	repo := repository.NewMarketRepository(dbpool)
 	svc := service.NewMarketService(repo)
+	ingestMetrics := observability.NewIngestMetrics()
+	historyIngestMetrics := observability.NewHistoryIngestMetrics()
+	databaseMonitor := observability.NewPgxDatabaseMonitor(dbpool)
 
 	healthHandler := handlers.NewHealthHandler(svc)
 	ingestHandler := handlers.NewIngestHandler(
 		svc,
 		[]string{cfg.IngestBearerToken, cfg.IngestPreviousBearerToken},
 		cfg.MaxIngestBodyBytes,
+		ingestMetrics,
+		logger,
+		historyIngestMetrics,
 	)
-	pricesHandler := handlers.NewPricesHandler(svc)
+	pricesHandler := handlers.NewPricesHandler(svc, cfg.MaxPublicBodyBytes)
+	historyHandler := handlers.NewHistoryHandler(svc, cfg.MaxPublicBodyBytes)
+	statusHandler := handlers.NewStatusHandler(
+		serviceName,
+		cfg.AppEnv,
+		startedAt,
+		databaseMonitor,
+		ingestMetrics,
+		historyIngestMetrics,
+	)
 
-	router := server.NewRouter(healthHandler, ingestHandler, pricesHandler)
+	router := server.NewRouter(
+		healthHandler,
+		ingestHandler,
+		pricesHandler,
+		historyHandler,
+		statusHandler,
+		server.SecurityOptions{
+			AllowedOrigins: cfg.CORSAllowedOrigins,
+			RateLimit: server.RateLimitOptions{
+				Enabled:           cfg.RateLimitEnabled,
+				RequestsPerSecond: cfg.RateLimitRequestsPerSec,
+				Burst:             cfg.RateLimitBurst,
+				ClientTTL:         cfg.RateLimitClientTTL,
+				TrustProxyHeaders: cfg.TrustProxyHeaders,
+			},
+		},
+	)
 
 	srv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      router,
-		ReadTimeout:  cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout,
-		IdleTimeout:  cfg.IdleTimeout,
+		Addr:              cfg.HTTPAddr,
+		Handler:           router,
+		ReadTimeout:       cfg.ReadTimeout,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
+		MaxHeaderBytes:    cfg.MaxHeaderBytes,
 	}
 
+	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("api listening on %s", cfg.HTTPAddr)
-		log.Printf("ingest bearer required: true")
-		if cfg.IngestPreviousBearerToken != "" {
-			log.Printf("ingest previous bearer accepted: true")
-		}
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen and serve: %v", err)
-		}
+		logger.Info(
+			"api.started",
+			observability.F("address", cfg.HTTPAddr),
+			observability.F("environment", cfg.AppEnv),
+			observability.F("health", "/healthz"),
+			observability.F("status", "/api/v1/status"),
+			observability.F("markets", "/api/v1/markets"),
+			observability.F("prices", "/api/v1/prices"),
+			observability.F("prices_query", "/api/v1/prices/query"),
+			observability.F("history", "/api/v1/history"),
+			observability.F("history_query", "/api/v1/history/query"),
+			observability.F("history_ingest", "/api/v1/ingest/history"),
+			observability.F("cors_origins", len(cfg.CORSAllowedOrigins)),
+			observability.F("rate_limit_enabled", cfg.RateLimitEnabled),
+			observability.F("trust_proxy_headers", cfg.TrustProxyHeaders),
+			observability.F("color", cfg.LogColor),
+		)
+		serverErrors <- srv.ListenAndServe()
 	}()
 
-	<-ctx.Done()
-	log.Println("shutdown signal received")
+	select {
+	case <-ctx.Done():
+		logger.Info("api.shutdown_requested", observability.F("reason", ctx.Err()))
+	case err := <-serverErrors:
+		if err != nil && err != http.ErrServerClosed {
+			logger.Error("api.serve_failed", observability.F("error", err))
+			return
+		}
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("server shutdown: %v", err)
+		logger.Error("api.shutdown_failed", observability.F("error", err))
+		return
 	}
 
-	log.Println("server stopped")
+	logger.Success("api.stopped", observability.F("uptime", time.Since(startedAt).Round(time.Millisecond)))
+}
+
+func durationMilliseconds(duration time.Duration) float64 {
+	return float64(duration.Microseconds()) / 1000
 }
