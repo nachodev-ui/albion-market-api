@@ -52,6 +52,12 @@ func TestCORSAllowsConfiguredOrigin(t *testing.T) {
 	if got := response.Header().Get("Access-Control-Allow-Credentials"); got != "" {
 		t.Fatalf("allow credentials = %q, want empty", got)
 	}
+	if got := response.Header().Get("Access-Control-Allow-Headers"); got != "Authorization, Content-Type, X-Request-ID" {
+		t.Fatalf("allow headers = %q", got)
+	}
+	if got := response.Header().Get("Access-Control-Expose-Headers"); got != "X-Request-ID" {
+		t.Fatalf("expose headers = %q", got)
+	}
 }
 
 func TestCORSRejectsUnknownOrigin(t *testing.T) {
@@ -100,7 +106,7 @@ func TestRateLimiterUsesTokenBucket(t *testing.T) {
 	}
 }
 
-func TestRateLimitMiddlewareReturns429AndExemptsHealth(t *testing.T) {
+func TestRateLimitMiddlewareReturns429AndExemptsOperationalEndpoints(t *testing.T) {
 	t.Parallel()
 
 	limiter := newIPRateLimiter(RateLimitOptions{
@@ -127,10 +133,12 @@ func TestRateLimitMiddlewareReturns429AndExemptsHealth(t *testing.T) {
 		t.Fatal("Retry-After header is missing")
 	}
 
-	health := httptest.NewRecorder()
-	handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if health.Code != http.StatusNoContent {
-		t.Fatalf("health status = %d, want %d", health.Code, http.StatusNoContent)
+	for _, path := range []string{"/healthz", "/readyz", "/metrics"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusNoContent {
+			t.Fatalf("%s status = %d, want %d", path, response.Code, http.StatusNoContent)
+		}
 	}
 }
 

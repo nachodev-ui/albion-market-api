@@ -127,3 +127,14 @@ func TestValidateSecretFilePermissionsRejectsBroadHostFile(t *testing.T) {
 		t.Fatalf("private host file was rejected: %v", err)
 	}
 }
+
+func TestDefaultLogFormatUsesJSONInProduction(t *testing.T) {
+	t.Parallel()
+
+	if got := defaultLogFormat("production"); got != "json" {
+		t.Fatalf("production log format = %q, want json", got)
+	}
+	if got := defaultLogFormat("development"); got != "text" {
+		t.Fatalf("development log format = %q, want text", got)
+	}
+}

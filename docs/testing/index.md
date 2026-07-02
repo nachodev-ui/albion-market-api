@@ -39,7 +39,7 @@ comparaciones automáticas con Go.
 .\scripts\test-deployment-compose.ps1
 ```
 
-La primera prueba valida directamente la imagen. La segunda valida el modelo Compose completo: imágenes fijadas por digest, secretos montados, migraciones obligatorias, runtime endurecido, `/healthz` y apagado por `SIGTERM`. Consulta [Despliegue reproducible y seguro](../deployment/).
+La primera prueba valida directamente la imagen. La segunda valida el modelo Compose completo: imágenes fijadas por digest, secretos montados, migraciones obligatorias, runtime endurecido, `/healthz`, `/readyz`, `/metrics`, ausencia de secretos en métricas y apagado por `SIGTERM`. Consulta [Despliegue reproducible y seguro](../deployment/).
 
 ## Documentación
 

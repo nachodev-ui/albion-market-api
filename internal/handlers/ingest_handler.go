@@ -89,6 +89,7 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 			ErrorKind:          errorKind,
 		})
 		h.logOutcome(
+			observability.CorrelationID(r.Context()),
 			requestID,
 			serverName,
 			entries,
@@ -221,6 +222,7 @@ type ingestErrorResponse struct {
 }
 
 func (h *IngestHandler) logOutcome(
+	correlationID string,
 	requestID string,
 	serverName string,
 	entries int,
@@ -241,6 +243,7 @@ func (h *IngestHandler) logOutcome(
 	}
 
 	fields := []observability.Field{
+		observability.F("correlation_id", correlationID),
 		observability.F("request_id", requestID),
 		observability.F("server", serverName),
 		observability.F("entries", entries),

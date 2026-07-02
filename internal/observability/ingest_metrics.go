@@ -23,6 +23,7 @@ type IngestMetricsSnapshot struct {
 	ErrorsTotal             uint64
 	AcceptedEntriesTotal    uint64
 	CurrentRowsTouchedTotal uint64
+	DurationTotal           time.Duration
 	AverageDuration         time.Duration
 	LastDuration            time.Duration
 	MaxDuration             time.Duration
@@ -116,6 +117,7 @@ func (m *IngestMetrics) Snapshot() IngestMetricsSnapshot {
 		ErrorsTotal:             m.errorsTotal,
 		AcceptedEntriesTotal:    m.acceptedEntriesTotal,
 		CurrentRowsTouchedTotal: m.currentRowsTouchedTotal,
+		DurationTotal:           m.durationTotal,
 		AverageDuration:         average,
 		LastDuration:            m.lastDuration,
 		MaxDuration:             m.maxDuration,

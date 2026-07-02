@@ -10,7 +10,9 @@ El contrato máquina legible y su auditoría inicial están en
 
 | Método | Ruta | Autenticación | Descripción |
 |---|---|---|---|
-| `GET` | `/healthz` | pública | Salud de API y PostgreSQL |
+| `GET` | `/healthz` | pública | Liveness del proceso |
+| `GET` | `/readyz` | pública | Readiness con PostgreSQL |
+| `GET` | `/metrics` | pública | Métricas Prometheus |
 | `GET` | `/api/v1/status` | pública | Estado y métricas en memoria |
 | `GET` | `/api/v1/markets` | pública | Catálogo de mercados |
 | `GET` | `/api/v1/prices` | pública | Consulta simple de precios |
@@ -20,17 +22,25 @@ El contrato máquina legible y su auditoría inicial están en
 | `POST` | `/api/v1/ingest/prices` | Bearer | Ingesta de precios |
 | `POST` | `/api/v1/ingest/history` | Bearer | Ingesta de historial |
 
-## Salud
+## Liveness y readiness
 
 ```http
 GET /healthz
+GET /readyz
 ```
 
-```json
-{"status":"ok"}
+`/healthz` confirma que el proceso está vivo sin depender de PostgreSQL.
+`/readyz` comprueba PostgreSQL y devuelve `503` cuando la API no está lista.
+Ambas respuestas incluyen `Cache-Control: no-store`.
+
+## Métricas
+
+```http
+GET /metrics
 ```
 
-Devuelve `503` cuando PostgreSQL no está disponible.
+Expone métricas Prometheus de HTTP, ingesta, PostgreSQL, runtime Go y build con
+etiquetas de cardinalidad acotada. Consulta [observabilidad](../operations/observability.md).
 
 ## Estado
 
