@@ -43,6 +43,7 @@ type Config struct {
 	RateLimitClientTTL      time.Duration
 	TrustProxyHeaders       bool
 	LogColor                string
+	LogFormat               string
 }
 
 func Load() (Config, error) {
@@ -107,6 +108,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	logFormat := strings.ToLower(strings.TrimSpace(getEnv("LOG_FORMAT", defaultLogFormat(appEnv))))
+	if logFormat != "text" && logFormat != "json" {
+		return Config{}, fmt.Errorf("LOG_FORMAT must be text or json")
+	}
 	minimumTokenLength, err := intEnv("INGEST_MIN_TOKEN_LENGTH", 32)
 	if err != nil {
 		return Config{}, err
@@ -149,6 +154,7 @@ func Load() (Config, error) {
 		RateLimitClientTTL:      rateLimitClientTTL,
 		TrustProxyHeaders:       trustProxyHeaders,
 		LogColor:                getEnv("LOG_COLOR", "auto"),
+		LogFormat:               logFormat,
 	}
 
 	if cfg.HTTPAddr == "" {
@@ -332,6 +338,13 @@ func validCredentialID(value string) bool {
 		return false
 	}
 	return true
+}
+
+func defaultLogFormat(appEnv string) string {
+	if appEnv == "production" {
+		return "json"
+	}
+	return "text"
 }
 
 func getEnv(key, fallback string) string {

@@ -65,3 +65,36 @@ func TestLoggerRedactsSensitiveFields(t *testing.T) {
 		t.Fatalf("safe credential identifier was redacted: %q", line)
 	}
 }
+
+func TestLoggerWritesJSONAndRedactsSecrets(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	logger := NewLoggerWithFormat(&output, "always", "json")
+	logger.now = func() time.Time {
+		return time.Date(2026, time.July, 2, 18, 0, 0, 0, time.UTC)
+	}
+	logger.Info(
+		"http.request_completed",
+		F("correlation_id", "abc-123"),
+		F("status", 200),
+		F("token", "must-not-leak"),
+	)
+
+	line := strings.TrimSpace(output.String())
+	if strings.Contains(line, "must-not-leak") || strings.Contains(line, "\\u001b") {
+		t.Fatalf("unsafe JSON log: %q", line)
+	}
+	for _, expected := range []string{
+		`"timestamp":"2026-07-02T18:00:00Z"`,
+		`"level":"INFO"`,
+		`"event":"http.request_completed"`,
+		`"correlation_id":"abc-123"`,
+		`"status":200`,
+		`"token":"[REDACTED]"`,
+	} {
+		if !strings.Contains(line, expected) {
+			t.Fatalf("JSON log %q does not contain %q", line, expected)
+		}
+	}
+}

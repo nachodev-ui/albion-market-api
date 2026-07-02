@@ -73,7 +73,8 @@ func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 		} else {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		}
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Max-Age", "600")
 
@@ -124,7 +125,7 @@ func newIPRateLimiter(options RateLimitOptions) *ipRateLimiter {
 
 func withRateLimit(next http.Handler, limiter *ipRateLimiter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions || r.URL.Path == "/healthz" {
+		if r.Method == http.MethodOptions || isOperationalProbe(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -144,6 +145,15 @@ func withRateLimit(next http.Handler, limiter *ipRateLimiter) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isOperationalProbe(path string) bool {
+	switch path {
+	case "/healthz", "/readyz", "/metrics":
+		return true
+	default:
+		return false
+	}
 }
 
 func (l *ipRateLimiter) allow(client string, now time.Time) (bool, int, time.Duration) {

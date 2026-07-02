@@ -54,10 +54,12 @@ go test ./...
 go run ./cmd/api
 ```
 
-La API escucha en `:8080` por defecto. Comprueba el servicio con:
+La API escucha en `:8080` por defecto. Comprueba liveness, readiness y métricas con:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/healthz
+Invoke-RestMethod http://127.0.0.1:8080/readyz
+(Invoke-WebRequest http://127.0.0.1:8080/metrics).Content
 ```
 
 ## Despliegue local reproducible
@@ -78,7 +80,9 @@ La API solo arranca después de que PostgreSQL esté saludable y todas las migra
 
 | Método | Ruta | Propósito |
 |---|---|---|
-| `GET` | `/healthz` | Salud de la API y PostgreSQL |
+| `GET` | `/healthz` | Liveness del proceso |
+| `GET` | `/readyz` | Readiness con PostgreSQL |
+| `GET` | `/metrics` | Métricas Prometheus |
 | `GET` | `/api/v1/status` | Estado operativo y métricas |
 | `GET` | `/api/v1/markets` | Catálogo público de mercados |
 | `GET` | `/api/v1/prices` | Consulta simple de precios |

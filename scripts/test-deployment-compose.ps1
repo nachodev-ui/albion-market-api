@@ -114,7 +114,7 @@ function Wait-ForApiHealth {
 $HostPort = Get-FreeTcpPort
 
 try {
-    Write-Host "[1/8] Checking Docker and initializing temporary secrets..."
+    Write-Host "[1/10] Checking Docker and initializing temporary secrets..."
     Invoke-Docker -Arguments @("info") | Out-Null
     New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
     & $Initializer `
@@ -131,14 +131,14 @@ try {
         throw "Deployment initializer failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "[2/8] Validating the rendered Compose model..."
+    Write-Host "[2/10] Validating the rendered Compose model..."
     Invoke-Compose -Arguments @("config", "--quiet")
 
-    Write-Host "[3/8] Building and starting PostgreSQL, migrations and API..."
+    Write-Host "[3/10] Building and starting PostgreSQL, migrations and API..."
     Invoke-Compose -Arguments @("up", "--build", "--detach")
     $ComposeStarted = $true
 
-    Write-Host "[4/8] Waiting for the API healthcheck..."
+    Write-Host "[4/10] Waiting for the API healthcheck..."
     $ApiId = Wait-ForApiHealth -Timeout $TimeoutSeconds
 
     $MigrationId = Invoke-Compose -Arguments @("ps", "--all", "--quiet", "migrate") -CaptureOutput
@@ -161,13 +161,31 @@ try {
         }
     }
 
-    Write-Host "[5/8] Verifying the public health endpoint..."
+    Write-Host "[5/10] Verifying the liveness endpoint..."
     $Health = Invoke-RestMethod -Uri "http://127.0.0.1:$HostPort/healthz" -Method Get -TimeoutSec 5
     if ($Health.status -ne "ok") {
         throw "Unexpected health response: $($Health | ConvertTo-Json -Compress)"
     }
 
-    Write-Host "[6/8] Verifying hardened runtime and mounted secrets..."
+    Write-Host "[6/10] Verifying the readiness endpoint..."
+    $Readiness = Invoke-RestMethod -Uri "http://127.0.0.1:$HostPort/readyz" -Method Get -TimeoutSec 5
+    if ($Readiness.status -ne "ok") {
+        throw "Unexpected readiness response: $($Readiness | ConvertTo-Json -Compress)"
+    }
+
+    Write-Host "[7/10] Verifying Prometheus metrics..."
+    $MetricsBody = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$HostPort/metrics" -Method Get -TimeoutSec 5).Content
+    foreach ($ExpectedMetric in @(
+        "albion_market_api_build_info",
+        "albion_market_api_http_requests_total",
+        "albion_market_api_database_ready 1"
+    )) {
+        if ($MetricsBody -notmatch [Regex]::Escape($ExpectedMetric)) {
+            throw "Metrics output is missing $ExpectedMetric"
+        }
+    }
+
+    Write-Host "[8/10] Verifying hardened runtime and mounted secrets..."
     $Inspect = (Invoke-Docker -Arguments @("inspect", $ApiId) -CaptureOutput | ConvertFrom-Json)[0]
     if ($Inspect.Config.User -ne "65532:65532") {
         throw "API runtime user is '$($Inspect.Config.User)'; expected 65532:65532."
@@ -209,16 +227,19 @@ try {
         if ($Environment.Contains($SecretValue)) {
             throw "A secret value leaked into the API container environment."
         }
+        if ($MetricsBody.Contains($SecretValue)) {
+            throw "A secret value leaked into the metrics endpoint."
+        }
     }
 
-    Write-Host "[7/8] Verifying graceful shutdown..."
+    Write-Host "[9/10] Verifying graceful shutdown..."
     Invoke-Compose -Arguments @("stop", "--timeout", "15", "api")
     $ApiLogs = Invoke-Compose -Arguments @("logs", "--no-color", "api") -CaptureOutput
     if ($ApiLogs -notmatch "api\.stopped") {
         throw "The API did not log a graceful shutdown:`n$ApiLogs"
     }
 
-    Write-Host "[8/8] Compose deployment smoke test completed."
+    Write-Host "[10/10] Compose deployment smoke test completed."
     Write-Host "[OK] Reproducible deployment, migrations and secret mounts validated."
     Write-Host "Image=$ImageTag"
     Write-Host "RuntimeUser=$($Inspect.Config.User)"

@@ -25,6 +25,7 @@ type HistoryIngestMetricsSnapshot struct {
 	AcceptedEntriesTotal    uint64
 	AcceptedBucketsTotal    uint64
 	HistoryRowsTouchedTotal uint64
+	DurationTotal           time.Duration
 	AverageDuration         time.Duration
 	LastDuration            time.Duration
 	MaxDuration             time.Duration
@@ -119,6 +120,7 @@ func (m *HistoryIngestMetrics) Snapshot() HistoryIngestMetricsSnapshot {
 		AcceptedEntriesTotal:    m.acceptedEntriesTotal,
 		AcceptedBucketsTotal:    m.acceptedBucketsTotal,
 		HistoryRowsTouchedTotal: m.historyRowsTouchedTotal,
+		DurationTotal:           m.durationTotal,
 		AverageDuration:         average,
 		LastDuration:            m.lastDuration,
 		MaxDuration:             m.maxDuration,

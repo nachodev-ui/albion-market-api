@@ -118,6 +118,8 @@ docker compose `
   ps --all
 
 Invoke-RestMethod http://127.0.0.1:18080/healthz
+Invoke-RestMethod http://127.0.0.1:18080/readyz
+(Invoke-WebRequest http://127.0.0.1:18080/metrics).Content
 ```
 
 La API se publica únicamente en `127.0.0.1`. Para acceso externo usa un proxy TLS confiable. Mantén `INGEST_REQUIRE_HTTPS=true`; activa `TRUST_PROXY_HEADERS=true` solo cuando el proxy reescriba y controle las cabeceras reenviadas.

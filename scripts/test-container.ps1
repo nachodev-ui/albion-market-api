@@ -150,11 +150,11 @@ try {
         throw "Could not resolve the current Git revision."
     }
 
-    Write-Host "[1/7] Creating isolated Docker network..."
+    Write-Host "[1/9] Creating isolated Docker network..."
     Invoke-Docker -Arguments @("network", "create", $NetworkName)
     $NetworkCreated = $true
 
-    Write-Host "[2/7] Starting temporary PostgreSQL..."
+    Write-Host "[2/9] Starting temporary PostgreSQL..."
     Invoke-Docker -Arguments @(
         "run", "--detach",
         "--name", $DatabaseContainer,
@@ -173,7 +173,7 @@ try {
     $DatabaseCreated = $true
     Wait-ContainerHealth -Container $DatabaseContainer -TimeoutSeconds 90
 
-    Write-Host "[3/7] Applying migrations in lexical order..."
+    Write-Host "[3/9] Applying migrations in lexical order..."
     $Migrations = @(Get-ChildItem -LiteralPath $MigrationsPath -Filter "*.sql" -File | Sort-Object Name)
     if ($Migrations.Count -eq 0) {
         throw "No SQL migrations were found in $MigrationsPath."
@@ -191,7 +191,7 @@ try {
         )
     }
 
-    Write-Host "[4/7] Building the production image..."
+    Write-Host "[4/9] Building the production image..."
     Invoke-Docker -Arguments @(
         "build", "--pull",
         "--tag", $ImageTag,
@@ -206,7 +206,7 @@ try {
         throw "Image user is '$ConfiguredUser'; expected 65532:65532."
     }
 
-    Write-Host "[5/7] Starting the API with a hardened runtime..."
+    Write-Host "[5/9] Starting the API with a hardened runtime..."
     Invoke-Docker -Arguments @(
         "run", "--detach",
         "--name", $ApiContainer,
@@ -221,6 +221,7 @@ try {
         "--env", "HTTP_ADDR=:8080",
         "--env", "LOAD_DOTENV=false",
         "--env", "LOG_COLOR=never",
+        "--env", "LOG_FORMAT=json",
         "--mount", "type=bind,source=$DatabaseUrlPath,target=/run/secrets/database_url,readonly",
         "--mount", "type=bind,source=$IngestTokenPath,target=/run/secrets/ingest_token,readonly",
         "--env", "DATABASE_URL_FILE=/run/secrets/database_url",
@@ -241,13 +242,36 @@ try {
         }
     }
 
-    Write-Host "[6/7] Checking the public health endpoint..."
+    Write-Host "[6/9] Checking the liveness endpoint..."
     $Health = Invoke-RestMethod -Uri "http://127.0.0.1:$HostPort/healthz" -Method Get -TimeoutSec 5
     if ($Health.status -ne "ok") {
         throw "Unexpected health response: $($Health | ConvertTo-Json -Compress)"
     }
 
-    Write-Host "[7/7] Verifying graceful SIGTERM shutdown..."
+    Write-Host "[7/9] Checking the readiness endpoint..."
+    $Readiness = Invoke-RestMethod -Uri "http://127.0.0.1:$HostPort/readyz" -Method Get -TimeoutSec 5
+    if ($Readiness.status -ne "ok") {
+        throw "Unexpected readiness response: $($Readiness | ConvertTo-Json -Compress)"
+    }
+
+    Write-Host "[8/9] Checking the Prometheus metrics endpoint..."
+    $MetricsBody = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$HostPort/metrics" -Method Get -TimeoutSec 5).Content
+    foreach ($ExpectedMetric in @(
+        "albion_market_api_build_info",
+        "albion_market_api_http_requests_total",
+        "albion_market_api_database_ready 1"
+    )) {
+        if ($MetricsBody -notmatch [Regex]::Escape($ExpectedMetric)) {
+            throw "Metrics output is missing $ExpectedMetric"
+        }
+    }
+    foreach ($SecretValue in @($PostgresPassword, $DatabaseUrl, $IngestToken)) {
+        if ($MetricsBody.Contains($SecretValue)) {
+            throw "A secret value leaked into the metrics endpoint."
+        }
+    }
+
+    Write-Host "[9/9] Verifying graceful SIGTERM shutdown..."
     Invoke-Docker -Arguments @("stop", "--timeout", "15", $ApiContainer)
     $ApiLogs = Invoke-Docker -Arguments @("logs", $ApiContainer) -CaptureOutput
     if ($ApiLogs -notmatch "api\.stopped") {

@@ -44,6 +44,7 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 			ErrorKind:          errorKind,
 		})
 		h.logHistoryOutcome(
+			observability.CorrelationID(r.Context()),
 			requestID,
 			serverName,
 			entries,
@@ -183,6 +184,7 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *IngestHandler) logHistoryOutcome(
+	correlationID string,
 	requestID string,
 	serverName string,
 	entries int,
@@ -205,6 +207,7 @@ func (h *IngestHandler) logHistoryOutcome(
 	}
 
 	fields := []observability.Field{
+		observability.F("correlation_id", correlationID),
 		observability.F("request_id", requestID),
 		observability.F("server", serverName),
 		observability.F("entries", entries),

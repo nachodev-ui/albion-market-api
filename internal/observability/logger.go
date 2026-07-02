@@ -23,17 +23,27 @@ func F(key string, value any) Field {
 type Logger struct {
 	writer io.Writer
 	color  bool
+	format string
 	mu     sync.Mutex
 	now    func() time.Time
 }
 
 func NewLogger(writer io.Writer, colorMode string) *Logger {
+	return NewLoggerWithFormat(writer, colorMode, "text")
+}
+
+func NewLoggerWithFormat(writer io.Writer, colorMode, format string) *Logger {
 	if writer == nil {
 		writer = io.Discard
 	}
+	normalizedFormat := strings.ToLower(strings.TrimSpace(format))
+	if normalizedFormat != "json" {
+		normalizedFormat = "text"
+	}
 	return &Logger{
 		writer: writer,
-		color:  shouldUseColor(writer, colorMode),
+		color:  normalizedFormat == "text" && shouldUseColor(writer, colorMode),
+		format: normalizedFormat,
 		now:    time.Now,
 	}
 }
@@ -62,6 +72,29 @@ func (l *Logger) write(label, color, event string, fields ...Field) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if l.format == "json" {
+		record := make(map[string]any, len(fields)+3)
+		record["timestamp"] = l.now().UTC().Format(time.RFC3339Nano)
+		record["level"] = label
+		record["event"] = event
+		for _, field := range fields {
+			key := strings.TrimSpace(field.Key)
+			if key == "" || key == "timestamp" || key == "level" || key == "event" {
+				continue
+			}
+			if isSensitiveLogKey(key) {
+				record[key] = "[REDACTED]"
+				continue
+			}
+			record[key] = normalizeJSONLogValue(field.Value)
+		}
+		encoded, err := json.Marshal(record)
+		if err == nil {
+			_, _ = l.writer.Write(append(encoded, '\n'))
+		}
+		return
+	}
+
 	timestamp := l.now().UTC().Format(time.RFC3339Nano)
 	visibleLabel := fmt.Sprintf("%-5s", label)
 	if l.color {
@@ -76,6 +109,21 @@ func (l *Logger) write(label, color, event string, fields ...Field) {
 		_, _ = fmt.Fprintf(l.writer, " %s=%s", field.Key, formatLogField(field.Key, field.Value))
 	}
 	_, _ = io.WriteString(l.writer, "\n")
+}
+
+func normalizeJSONLogValue(value any) any {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case error:
+		return typed.Error()
+	case time.Time:
+		return typed.UTC().Format(time.RFC3339Nano)
+	case time.Duration:
+		return typed.String()
+	default:
+		return value
+	}
 }
 
 func formatLogField(key string, value any) string {

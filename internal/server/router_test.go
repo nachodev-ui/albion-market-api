@@ -42,13 +42,31 @@ func newTestRouter(t *testing.T) http.Handler {
 	metrics := observability.NewIngestMetrics()
 	historyMetrics := observability.NewHistoryIngestMetrics()
 
+	startedAt := time.Now()
+	httpMetrics := observability.NewHTTPMetrics()
+	databaseMetrics := observability.NewDatabaseMetrics()
+	metricsHandler := handlers.NewMetricsHandler(observability.NewPrometheusExporter(observability.PrometheusExporterOptions{
+		Service:       "albion-market-api",
+		Environment:   "test",
+		Version:       "test",
+		Revision:      "test",
+		StartedAt:     startedAt,
+		HTTP:          httpMetrics,
+		Database:      databaseMetrics,
+		DatabasePool:  routerDatabaseMonitor{},
+		Ingest:        metrics,
+		HistoryIngest: historyMetrics,
+	}))
+
 	return NewRouter(
 		handlers.NewHealthHandler(marketService),
 		handlers.NewIngestHandler(marketService, routerAuthenticator(t), 1<<20, metrics, nil, historyMetrics),
 		handlers.NewPricesHandler(marketService, 1<<20),
 		handlers.NewHistoryHandler(marketService, 1<<20),
-		handlers.NewStatusHandler("albion-market-api", "test", time.Now(), routerDatabaseMonitor{}, metrics, historyMetrics),
+		handlers.NewStatusHandler("albion-market-api", "test", startedAt, routerDatabaseMonitor{}, metrics, historyMetrics),
+		metricsHandler,
 		SecurityOptions{AllowedOrigins: []string{"http://localhost:5173"}},
+		ObservabilityOptions{HTTPMetrics: httpMetrics},
 	)
 }
 
@@ -173,4 +191,36 @@ func routerAuthenticator(t *testing.T) *ingestauth.Authenticator {
 		t.Fatal(err)
 	}
 	return authenticator
+}
+
+func TestRouterExposesOperationalEndpoints(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"/healthz", "/readyz", "/metrics"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			response := httptest.NewRecorder()
+			newTestRouter(t).ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("%s status code = %d, want %d; body=%s", path, response.Code, http.StatusOK, response.Body.String())
+			}
+			if response.Header().Get("X-Request-ID") == "" {
+				t.Fatalf("%s response is missing X-Request-ID", path)
+			}
+		})
+	}
+}
+
+func TestRouterPreservesValidRequestID(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	request.Header.Set("X-Request-ID", "trace-123")
+	response := httptest.NewRecorder()
+	newTestRouter(t).ServeHTTP(response, request)
+
+	if got := response.Header().Get("X-Request-ID"); got != "trace-123" {
+		t.Fatalf("X-Request-ID = %q, want trace-123", got)
+	}
 }

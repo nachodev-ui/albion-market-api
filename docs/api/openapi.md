@@ -1,4 +1,4 @@
-# Contrato OpenAPI y auditoría inicial
+# Contrato OpenAPI y auditoría
 
 El contrato canónico inicial vive en:
 
@@ -6,9 +6,9 @@ El contrato canónico inicial vive en:
 openapi/openapi.yaml
 ```
 
-Está declarado como **OpenAPI 3.1.1** con JSON Schema 2020-12. Esta primera
-versión documenta la implementación existente; no cambia handlers, servicios,
-repositorios ni respuestas HTTP.
+Está declarado como **OpenAPI 3.1.1** con JSON Schema 2020-12. El inventario se
+mantiene sincronizado con el router mediante pruebas contractuales, incluidos
+los endpoints operacionales de liveness, readiness y métricas.
 
 ## Alcance auditado
 
@@ -27,6 +27,8 @@ La auditoría contrastó:
 | Método | Ruta | Autenticación | Éxito |
 |---|---|---|---|
 | `GET` | `/healthz` | pública | `200` |
+| `GET` | `/readyz` | pública | `200`, o `503` |
+| `GET` | `/metrics` | pública | `200` |
 | `GET` | `/api/v1/status` | pública | `200`, o `503` degradado |
 | `GET` | `/api/v1/markets` | pública | `200` |
 | `GET` | `/api/v1/prices` | pública | `200` |
@@ -36,8 +38,9 @@ La auditoría contrastó:
 | `POST` | `/api/v1/ingest/prices` | Bearer | `202` nuevo, `200` duplicado |
 | `POST` | `/api/v1/ingest/history` | Bearer | `202` nuevo, `200` duplicado |
 
-El prefijo `/api/v1` es la versión mayor del contrato público. `/healthz` se
-mantiene fuera del prefijo por ser una sonda operacional.
+El prefijo `/api/v1` es la versión mayor del contrato público. `/healthz`,
+`/readyz` y `/metrics` se mantienen fuera del prefijo por ser endpoints
+operacionales.
 
 ## Convenciones preservadas
 
@@ -54,7 +57,8 @@ El contrato no intenta uniformar nombres ya publicados:
 También quedaron modelados los comportamientos transversales:
 
 - CORS puede responder `403` antes de llegar al handler;
-- el rate limiter puede responder `429` en todas las rutas salvo `/healthz`;
+- el rate limiter puede responder `429` en rutas de aplicación; `/healthz`,
+  `/readyz`, `/metrics` y `OPTIONS` quedan exentos;
 - ingesta admite `identity` y `gzip`;
 - ingesta puede exigir HTTPS y responder `426`;
 - errores internos se sustituyen por `internal server error`.
