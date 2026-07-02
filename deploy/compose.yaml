@@ -89,6 +89,7 @@ services:
       HTTP_ADDR: :8080
       LOAD_DOTENV: "false"
       LOG_COLOR: never
+      LOG_FORMAT: json
       DATABASE_URL_FILE: /run/secrets/database_url
       INGEST_BEARER_TOKEN_FILE: /run/secrets/ingest_token
       INGEST_BEARER_TOKEN_ID: ${INGEST_TOKEN_ID:-receiver-current}

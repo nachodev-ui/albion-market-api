@@ -6,6 +6,8 @@ WORKDIR /src
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+ARG VERSION=dev
+ARG REVISION=unknown
 
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -18,7 +20,8 @@ COPY internal ./internal
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -buildvcs=false -ldflags='-s -w' \
+    go build -trimpath -buildvcs=false \
+      -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION}" \
       -o /out/albion-market-api ./cmd/api && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false -ldflags='-s -w' \
@@ -46,6 +49,7 @@ ENV APP_ENV=production \
     HTTP_ADDR=:8080 \
     LOAD_DOTENV=false \
     LOG_COLOR=never \
+    LOG_FORMAT=json \
     TZ=UTC \
     HEALTHCHECK_URL=http://127.0.0.1:8080/healthz
 

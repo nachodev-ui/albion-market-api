@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -30,7 +31,9 @@ var (
 	}
 )
 
-func (r *PgxMarketRepository) IngestHistory(ctx context.Context, req domain.IngestHistoryRequest) (domain.IngestHistoryResult, error) {
+func (r *PgxMarketRepository) IngestHistory(ctx context.Context, req domain.IngestHistoryRequest) (result domain.IngestHistoryResult, err error) {
+	started := time.Now()
+	defer func() { r.observeDatabase("ingest_history", started, err) }()
 	serverID, err := mapServer(req.Server)
 	if err != nil {
 		return domain.IngestHistoryResult{}, err
@@ -90,12 +93,14 @@ func (r *PgxMarketRepository) IngestHistory(ctx context.Context, req domain.Inge
 		return result, nil
 	}
 
+	copyStarted := time.Now()
 	copiedRows, err := tx.CopyFrom(
 		ctx,
 		marketHistoryIngestRawTable,
 		marketHistoryIngestRawColumns,
 		newRawHistoryCopySource(requestUUID, serverID, req.Entries),
 	)
+	r.observeDatabase("copy_raw_history", copyStarted, err)
 	if err != nil {
 		return domain.IngestHistoryResult{}, fmt.Errorf("copy raw market history: %w", err)
 	}
@@ -191,7 +196,9 @@ func (r *PgxMarketRepository) IngestHistory(ctx context.Context, req domain.Inge
 			)
 	`
 
+	upsertStarted := time.Now()
 	tag, err := tx.Exec(ctx, upsertHistory, requestUUID)
+	r.observeDatabase("upsert_market_history", upsertStarted, err)
 	if err != nil {
 		return domain.IngestHistoryResult{}, fmt.Errorf("upsert market history: %w", err)
 	}
@@ -358,7 +365,9 @@ func (s *rawHistoryCopySource) Err() error {
 func (r *PgxMarketRepository) QueryMarketHistory(
 	ctx context.Context,
 	lookup domain.MarketHistoryLookup,
-) ([]domain.MarketHistorySeries, error) {
+) (histories []domain.MarketHistorySeries, err error) {
+	started := time.Now()
+	defer func() { r.observeDatabase("query_market_history", started, err) }()
 	serverID, err := mapServer(lookup.Server)
 	if err != nil {
 		return nil, err
@@ -410,7 +419,7 @@ func (r *PgxMarketRepository) QueryMarketHistory(
 	}
 	defer rows.Close()
 
-	histories := make([]domain.MarketHistorySeries, 0)
+	histories = make([]domain.MarketHistorySeries, 0)
 	for rows.Next() {
 		var serverValue int16
 		var locationID int16

@@ -11,8 +11,9 @@ info:
     los `location_id` internos. Las rutas de ingesta son contratos internos
     autenticados mediante Bearer token y conservan nombres JSON en `snake_case`.
 
-    El prefijo `/api/v1` constituye la versión mayor del contrato HTTP. La ruta
-    `/healthz` queda fuera del prefijo porque es una sonda operacional.
+    El prefijo `/api/v1` constituye la versión mayor del contrato HTTP. Las rutas
+    `/healthz`, `/readyz` y `/metrics` quedan fuera del prefijo porque son
+    endpoints operacionales.
 servers:
   - url: http://127.0.0.1:8080
     description: Servidor local predeterminado
@@ -35,11 +36,38 @@ paths:
       tags: [Health]
       operationId: getHealth
       security: []
-      summary: Comprobar salud de API y PostgreSQL
+      summary: Comprobar que el proceso HTTP está vivo
       description: |
-        Ejecuta un ping al repositorio. Esta ruta no está sujeta al limitador
-        global por IP. Cuando la petición alcanza el handler, la respuesta incluye
+        Sonda de liveness sin dependencia de PostgreSQL. Una caída breve de base
+        de datos no provoca que el runtime reinicie un proceso API saludable.
+        Esta ruta no está sujeta al limitador global por IP y responde con
         `Cache-Control: no-store`.
+      responses:
+        '200':
+          description: El proceso API está vivo.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOK'
+              example:
+                status: ok
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedGet'
+
+  /readyz:
+    get:
+      tags: [Health]
+      operationId: getReadiness
+      security: []
+      summary: Comprobar que la API está lista para recibir tráfico
+      description: |
+        Ejecuta un ping PostgreSQL con timeout acotado. Esta ruta no está sujeta
+        al limitador global por IP y no expone el error interno de infraestructura.
       responses:
         '200':
           description: API y PostgreSQL disponibles.
@@ -57,7 +85,7 @@ paths:
         '405':
           $ref: '#/components/responses/MethodNotAllowedGet'
         '503':
-          description: PostgreSQL no está disponible.
+          description: PostgreSQL no está disponible dentro del timeout.
           headers:
             Cache-Control:
               $ref: '#/components/headers/NoStore'
@@ -68,6 +96,42 @@ paths:
               example:
                 status: error
                 error: service unavailable
+
+  /metrics:
+    get:
+      tags: [Status]
+      operationId: getPrometheusMetrics
+      security: []
+      summary: Exponer métricas Prometheus del proceso
+      description: |
+        Expone métricas de HTTP, ingesta, PostgreSQL, runtime Go y build usando
+        etiquetas de cardinalidad acotada. No incluye request IDs, item IDs,
+        ubicaciones, tokens ni textos completos de error. Esta ruta no está sujeta
+        al limitador global por IP.
+      responses:
+        '200':
+          description: Exposición Prometheus en formato de texto 0.0.4.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP albion_market_api_process_uptime_seconds API process uptime in seconds.
+                # TYPE albion_market_api_process_uptime_seconds gauge
+                albion_market_api_process_uptime_seconds 42
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedGet'
+        '503':
+          description: El exportador no está configurado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/status:
     get:

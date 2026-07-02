@@ -51,6 +51,9 @@ En producción no se admite `*` como origen CORS. Activa `TRUST_PROXY_HEADERS` s
 
 ## Logs
 
-`LOG_COLOR` admite `auto`, `always` o `never`. La variable estándar `NO_COLOR` también desactiva colores en modo automático.
+`LOG_FORMAT` admite `text` o `json`. El valor predeterminado es `json` en
+`production` y `text` en los demás entornos. `LOG_COLOR` admite `auto`, `always`
+o `never` y solo aplica al formato `text`. La variable estándar `NO_COLOR`
+también desactiva colores en modo automático.
 
 La plantilla completa y mantenida junto al código es `.env.example`.

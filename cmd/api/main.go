@@ -22,6 +22,11 @@ import (
 
 const serviceName = "albion-market-api"
 
+var (
+	version  = "dev"
+	revision = "unknown"
+)
+
 func main() {
 	bootstrapLogger := observability.NewLogger(os.Stdout, "auto")
 	cfg, err := config.Load()
@@ -29,7 +34,7 @@ func main() {
 		bootstrapLogger.Error("config.load_failed", observability.F("error", err))
 		return
 	}
-	logger := observability.NewLogger(os.Stdout, cfg.LogColor)
+	logger := observability.NewLoggerWithFormat(os.Stdout, cfg.LogColor, cfg.LogFormat)
 	startedAt := time.Now().UTC()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -57,10 +62,12 @@ func main() {
 		observability.F("max_connections", dbpool.Stat().MaxConns()),
 	)
 
-	repo := repository.NewMarketRepository(dbpool)
+	databaseMetrics := observability.NewDatabaseMetrics()
+	repo := repository.NewMarketRepository(dbpool, databaseMetrics)
 	svc := service.NewMarketService(repo)
 	ingestMetrics := observability.NewIngestMetrics()
 	historyIngestMetrics := observability.NewHistoryIngestMetrics()
+	httpMetrics := observability.NewHTTPMetrics()
 	databaseMonitor := observability.NewPgxDatabaseMonitor(dbpool)
 
 	authenticator, err := ingestauth.New(cfg.IngestCredentials, ingestauth.Options{
@@ -77,6 +84,18 @@ func main() {
 	}
 
 	healthHandler := handlers.NewHealthHandler(svc)
+	metricsHandler := handlers.NewMetricsHandler(observability.NewPrometheusExporter(observability.PrometheusExporterOptions{
+		Service:       serviceName,
+		Environment:   cfg.AppEnv,
+		Version:       version,
+		Revision:      revision,
+		StartedAt:     startedAt,
+		HTTP:          httpMetrics,
+		Database:      databaseMetrics,
+		DatabasePool:  databaseMonitor,
+		Ingest:        ingestMetrics,
+		HistoryIngest: historyIngestMetrics,
+	}))
 	ingestHandler := handlers.NewIngestHandler(
 		svc,
 		authenticator,
@@ -102,6 +121,7 @@ func main() {
 		pricesHandler,
 		historyHandler,
 		statusHandler,
+		metricsHandler,
 		server.SecurityOptions{
 			AllowedOrigins: cfg.CORSAllowedOrigins,
 			RateLimit: server.RateLimitOptions{
@@ -111,6 +131,10 @@ func main() {
 				ClientTTL:         cfg.RateLimitClientTTL,
 				TrustProxyHeaders: cfg.TrustProxyHeaders,
 			},
+		},
+		server.ObservabilityOptions{
+			HTTPMetrics: httpMetrics,
+			Logger:      logger,
 		},
 	)
 
@@ -131,6 +155,8 @@ func main() {
 			observability.F("address", cfg.HTTPAddr),
 			observability.F("environment", cfg.AppEnv),
 			observability.F("health", "/healthz"),
+			observability.F("readiness", "/readyz"),
+			observability.F("metrics", "/metrics"),
 			observability.F("status", "/api/v1/status"),
 			observability.F("markets", "/api/v1/markets"),
 			observability.F("prices", "/api/v1/prices"),
@@ -144,6 +170,9 @@ func main() {
 			observability.F("rate_limit_enabled", cfg.RateLimitEnabled),
 			observability.F("trust_proxy_headers", cfg.TrustProxyHeaders),
 			observability.F("color", cfg.LogColor),
+			observability.F("log_format", cfg.LogFormat),
+			observability.F("version", version),
+			observability.F("revision", revision),
 		)
 		serverErrors <- srv.ListenAndServe()
 	}()

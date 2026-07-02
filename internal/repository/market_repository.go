@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nachodev-ui/albion-market-api/internal/domain"
+	"github.com/nachodev-ui/albion-market-api/internal/observability"
 )
 
 var (
@@ -45,18 +47,33 @@ type MarketRepository interface {
 }
 
 type PgxMarketRepository struct {
-	db *pgxpool.Pool
+	db      *pgxpool.Pool
+	metrics *observability.DatabaseMetrics
 }
 
-func NewMarketRepository(db *pgxpool.Pool) *PgxMarketRepository {
-	return &PgxMarketRepository{db: db}
+func NewMarketRepository(db *pgxpool.Pool, metrics ...*observability.DatabaseMetrics) *PgxMarketRepository {
+	var databaseMetrics *observability.DatabaseMetrics
+	if len(metrics) > 0 {
+		databaseMetrics = metrics[0]
+	}
+	return &PgxMarketRepository{db: db, metrics: databaseMetrics}
 }
 
-func (r *PgxMarketRepository) Ping(ctx context.Context) error {
+func (r *PgxMarketRepository) Ping(ctx context.Context) (err error) {
+	started := time.Now()
+	defer func() { r.observeDatabase("ping", started, err) }()
 	return r.db.Ping(ctx)
 }
 
-func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.IngestPricesRequest) (domain.IngestPricesResult, error) {
+func (r *PgxMarketRepository) observeDatabase(operation string, started time.Time, err error) {
+	if r.metrics != nil {
+		r.metrics.Observe(operation, time.Since(started), err)
+	}
+}
+
+func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.IngestPricesRequest) (result domain.IngestPricesResult, err error) {
+	started := time.Now()
+	defer func() { r.observeDatabase("ingest_prices", started, err) }()
 	// Do validation and CPU work before opening the transaction so a pool
 	// connection is not held while the request hash is calculated.
 	serverID, err := mapServer(req.Server)
@@ -107,12 +124,14 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 		return result, nil
 	}
 
+	copyStarted := time.Now()
 	copiedRows, err := tx.CopyFrom(
 		ctx,
 		marketIngestRawTable,
 		marketIngestRawColumns,
 		newRawPriceCopySource(requestUUID, serverID, req.Entries),
 	)
+	r.observeDatabase("copy_raw_prices", copyStarted, err)
 	if err != nil {
 		return domain.IngestPricesResult{}, fmt.Errorf("copy raw market prices: %w", err)
 	}
@@ -276,7 +295,9 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 			)
 	`
 
+	upsertStarted := time.Now()
 	tag, err := tx.Exec(ctx, upsertCurrent, requestUUID)
+	r.observeDatabase("upsert_current_prices", upsertStarted, err)
 	if err != nil {
 		return domain.IngestPricesResult{}, fmt.Errorf("upsert current prices: %w", err)
 	}
@@ -404,7 +425,9 @@ func equalHashes(a, b []byte) bool {
 	return true
 }
 
-func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, lookup domain.CurrentPriceLookup) ([]domain.CurrentPrice, error) {
+func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, lookup domain.CurrentPriceLookup) (prices []domain.CurrentPrice, err error) {
+	started := time.Now()
+	defer func() { r.observeDatabase("query_current_prices", started, err) }()
 	serverID, err := mapServer(lookup.Server)
 	if err != nil {
 		return nil, err
@@ -447,7 +470,7 @@ func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, lookup dom
 	}
 	defer rows.Close()
 
-	var prices []domain.CurrentPrice
+	prices = make([]domain.CurrentPrice, 0)
 	for rows.Next() {
 		var p domain.CurrentPrice
 		var serverValue int16
