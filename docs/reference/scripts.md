@@ -29,6 +29,16 @@ Los scripts PowerShell resuelven la conexión desde un parámetro explícito, va
 | `test-postgres-backup-restore.ps1` | Prueba integral de backup y restauración |
 | `postgres-client.ps1` | Utilidades seguras de conexión para herramientas PostgreSQL |
 
+## Contenedores
+
+| Script | Propósito |
+|---|---|
+| `initialize-deployment.ps1` | Genera secretos y configuración local para Docker Compose |
+| `test-container.ps1` | Construye la imagen de producción y ejecuta un smoke test aislado con PostgreSQL |
+| `test-deployment-compose.ps1` | Valida PostgreSQL, migraciones, secretos y runtime mediante Compose |
+
+Consulta [Despliegue reproducible y seguro](../deployment/) para el contrato de build y runtime.
+
 ## Tareas de Windows
 
 | Script | Propósito |

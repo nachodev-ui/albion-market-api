@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -88,5 +89,41 @@ func TestLoadIngestCredentialsSupportsRotation(t *testing.T) {
 	}
 	if sources[0].Source != "file" || sources[1].Source != "file" {
 		t.Fatalf("sources = %+v, want files", sources)
+	}
+}
+
+func TestSecretFromEnvOrFileSupportsDatabaseURLFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "database-url")
+	want := "postgres://albion_market:secret@postgres:5432/albion_market?sslmode=disable"
+	if err := os.WriteFile(path, []byte(want+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("DATABASE_URL_FILE", path)
+
+	value, source, err := secretFromEnvOrFile("DATABASE_URL", "DATABASE_URL_FILE", "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != want || source != "file" {
+		t.Fatalf("value=%q source=%q, want database URL from file", value, source)
+	}
+}
+
+func TestValidateSecretFilePermissionsAcceptsRuntimeManagedSecrets(t *testing.T) {
+	if err := validateSecretFilePermissions("/run/secrets/database_url", 0o444, "production"); err != nil {
+		t.Fatalf("runtime-managed secret was rejected: %v", err)
+	}
+}
+
+func TestValidateSecretFilePermissionsRejectsBroadHostFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce POSIX secret file permissions")
+	}
+	if err := validateSecretFilePermissions("/tmp/database-url", 0o644, "production"); err == nil {
+		t.Fatal("expected broad host file permissions to be rejected")
+	}
+	if err := validateSecretFilePermissions("/tmp/database-url", 0o600, "production"); err != nil {
+		t.Fatalf("private host file was rejected: %v", err)
 	}
 }
