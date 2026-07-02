@@ -186,6 +186,16 @@ Prueba integral del contrato Compose:
 
 La segunda prueba crea secretos y un volumen temporales, construye la imagen, verifica migraciones, healthcheck, usuario no root, filesystem de solo lectura, capacidades eliminadas, ausencia de secretos en el entorno y apagado ordenado. Al finalizar elimina contenedores, red, volumen, imagen temporal y archivos secretos.
 
+## Escaneo de vulnerabilidades
+
+El workflow construye la imagen final `scratch` y la analiza con Trivy antes del smoke test de Compose. La acción está fijada a un commit completo y la versión del CLI también es explícita.
+
+La política bloquea el workflow cuando Trivy encuentra vulnerabilidades corregibles de severidad `HIGH` o `CRITICAL` en paquetes del sistema o librerías incorporadas en los binarios. Los hallazgos sin corrección disponible se informan, pero no bloquean el merge.
+
+El escaneo no usa `continue-on-error`; una infracción produce código de salida `1`. La base de vulnerabilidades se actualiza en cada ejecución, por lo que un commit previamente válido puede fallar más adelante si se publica un nuevo aviso de seguridad.
+
 ## CI
 
-`.github/workflows/container.yml` ejecuta las pruebas contractuales de configuración y el smoke test Compose en Linux. No publica imágenes. La distribución, firma, etiquetado y retención de artefactos se mantienen para la etapa de versionado y mantenimiento.
+`.github/workflows/container.yml` ejecuta las pruebas contractuales de configuración, construye y escanea la imagen de producción y después ejecuta el smoke test Compose en Linux. También admite ejecución manual con `workflow_dispatch` una vez que el workflow ya existe en la rama predeterminada. Para esta primera incorporación, el escaneo real se validará mediante los checks del pull request.
+
+El workflow no publica imágenes. La distribución, firma, etiquetado y retención de artefactos se mantienen para la etapa de versionado y mantenimiento.

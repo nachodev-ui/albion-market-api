@@ -1,6 +1,7 @@
 name: Container checks
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - develop
@@ -47,6 +48,9 @@ jobs:
   container:
     name: Reproducible deployment smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SCAN_IMAGE: albion-market-api:ci-scan-${{ github.sha }}
 
     steps:
       - name: Checkout
@@ -65,6 +69,23 @@ jobs:
         run: |
           docker version
           docker compose version
+
+      - name: Build production image for vulnerability scan
+        run: docker build --tag "$SCAN_IMAGE" .
+
+      - name: Scan production image for high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.SCAN_IMAGE }}
+          scan-type: image
+          scanners: vuln
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          pkg-types: os,library
+          severity: CRITICAL,HIGH
+          version: v0.72.0
+          cache: true
 
       - name: Build and test secure Compose deployment
         shell: pwsh
