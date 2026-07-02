@@ -22,10 +22,20 @@ Ambas pruebas usan bases desechables y no deben apuntar a producción.
 
 Consulta la [prueba end-to-end](./end-to-end.md).
 
+## Contratos HTTP
+
+```powershell
+npm ci
+npm run contracts:check
+```
+
+Consulta [Pruebas de contratos](./contracts.md) para el lint OpenAPI y las
+comparaciones automáticas con Go.
+
 ## Documentación
 
 ```powershell
-npm install
+npm ci
 npm run docs:build
 npm run docs:preview
 ```
