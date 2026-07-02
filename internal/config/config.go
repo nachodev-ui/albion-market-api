@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -117,6 +118,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("INGEST_MIN_TOKEN_LENGTH must be at least 32 in production")
 	}
 
+	databaseURL, _, err := secretFromEnvOrFile("DATABASE_URL", "DATABASE_URL_FILE", appEnv)
+	if err != nil {
+		return Config{}, err
+	}
+
 	credentials, credentialSources, err := loadIngestCredentials(appEnv, minimumTokenLength)
 	if err != nil {
 		return Config{}, err
@@ -125,7 +131,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		AppEnv:                  appEnv,
 		HTTPAddr:                strings.TrimSpace(getEnv("HTTP_ADDR", ":8080")),
-		DatabaseURL:             strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		DatabaseURL:             databaseURL,
 		ReadTimeout:             readTimeout,
 		ReadHeaderTimeout:       readHeaderTimeout,
 		WriteTimeout:            writeTimeout,
@@ -149,7 +155,7 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
 	}
 	if cfg.DatabaseURL == "" {
-		return Config{}, fmt.Errorf("DATABASE_URL is required")
+		return Config{}, fmt.Errorf("DATABASE_URL or DATABASE_URL_FILE is required")
 	}
 	if cfg.RateLimitEnabled && cfg.RateLimitRequestsPerSec <= 0 {
 		return Config{}, fmt.Errorf("RATE_LIMIT_REQUESTS_PER_SECOND must be greater than zero when rate limiting is enabled")
@@ -251,8 +257,8 @@ func secretFromEnvOrFile(valueEnv, fileEnv, appEnv string) (string, string, erro
 	if info.Size() > maxSecretFileBytes {
 		return "", "", fmt.Errorf("%s exceeds %d bytes", fileEnv, maxSecretFileBytes)
 	}
-	if appEnv == "production" && runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-		return "", "", fmt.Errorf("%s permissions are too broad; use 0600 or stricter", fileEnv)
+	if err := validateSecretFilePermissions(filePath, info.Mode(), appEnv); err != nil {
+		return "", "", fmt.Errorf("%s: %w", fileEnv, err)
 	}
 
 	content, err := os.ReadFile(filePath)
@@ -264,6 +270,26 @@ func secretFromEnvOrFile(valueEnv, fileEnv, appEnv string) (string, string, erro
 		return "", "", fmt.Errorf("%s is empty", fileEnv)
 	}
 	return secret, "file", nil
+}
+
+func validateSecretFilePermissions(filePath string, mode os.FileMode, appEnv string) error {
+	if appEnv != "production" || runtime.GOOS == "windows" {
+		return nil
+	}
+
+	// Docker Compose grants /run/secrets files explicitly to the service and
+	// mounts them read-only. Compose implementations based on bind mounts may
+	// expose those files as 0444, so host-style 0600 checks are not applicable
+	// inside this runtime-managed directory.
+	cleanPath := filepath.ToSlash(filepath.Clean(filePath))
+	if cleanPath == "/run/secrets" || strings.HasPrefix(cleanPath, "/run/secrets/") {
+		return nil
+	}
+
+	if mode.Perm()&0o077 != 0 {
+		return fmt.Errorf("permissions are too broad; use 0600 or stricter")
+	}
+	return nil
 }
 
 func validateCredential(id, token string, minimumLength int) error {

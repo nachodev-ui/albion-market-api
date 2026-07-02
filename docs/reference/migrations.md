@@ -23,6 +23,22 @@ Get-ChildItem .\migrations\*.sql |
     }
 ```
 
+## Aplicación mediante Docker Compose
+
+`deploy/compose.yaml` ejecuta un servicio de una sola ejecución llamado `migrate`.
+Este espera a que PostgreSQL esté saludable, aplica los archivos en orden
+lexicográfico con `ON_ERROR_STOP=1` y debe terminar con código `0` antes de que
+la API pueda arrancar.
+
+```powershell
+docker compose `
+  --env-file .\deploy\compose.env.local `
+  --file .\deploy\compose.yaml `
+  up --build --detach
+```
+
+Una migración fallida bloquea el inicio de la API.
+
 ## Regla de mantenimiento
 
 - no reescribir una migración publicada;

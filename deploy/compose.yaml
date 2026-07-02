@@ -1,0 +1,129 @@
+name: ${COMPOSE_PROJECT_NAME:-albion-market-api}
+
+services:
+  postgres:
+    image: postgres:17.10-alpine3.23@sha256:3da929dcc3e63e3f0cc81fdb114c073ca48bfc7280e83a6324d5652fbee63742
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-albion_market}
+      POSTGRES_USER: ${POSTGRES_USER:-albion_market}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 30s
+
+  migrate:
+    image: postgres:17.10-alpine3.23@sha256:3da929dcc3e63e3f0cc81fdb114c073ca48bfc7280e83a6324d5652fbee63742
+    restart: "no"
+    user: postgres
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-albion_market}
+      POSTGRES_USER: ${POSTGRES_USER:-albion_market}
+    secrets:
+      - postgres_password
+    volumes:
+      - ../migrations:/migrations:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command: |
+      export PGPASSWORD="$$(cat /run/secrets/postgres_password)"
+      migration_count=0
+      for migration in $$(find /migrations -maxdepth 1 -type f -name '*.sql' | LC_ALL=C sort); do
+        migration_count=$$((migration_count + 1))
+        echo "Applying $${migration##*/}"
+        psql \
+          --host postgres \
+          --username "$${POSTGRES_USER}" \
+          --dbname "$${POSTGRES_DB}" \
+          --set ON_ERROR_STOP=1 \
+          --file "$${migration}"
+      done
+      test "$${migration_count}" -gt 0
+
+  api:
+    image: ${API_IMAGE:-albion-market-api:local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${IMAGE_VERSION:-local}
+        REVISION: ${IMAGE_REVISION:-unknown}
+        CREATED: ${IMAGE_CREATED:-1970-01-01T00:00:00Z}
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    environment:
+      APP_ENV: production
+      HTTP_ADDR: :8080
+      LOAD_DOTENV: "false"
+      LOG_COLOR: never
+      DATABASE_URL_FILE: /run/secrets/database_url
+      INGEST_BEARER_TOKEN_FILE: /run/secrets/ingest_token
+      INGEST_BEARER_TOKEN_ID: ${INGEST_TOKEN_ID:-receiver-current}
+      INGEST_REQUIRE_HTTPS: ${INGEST_REQUIRE_HTTPS:-true}
+      CORS_ALLOWED_ORIGINS: ${API_ALLOWED_ORIGINS:-}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+    secrets:
+      - database_url
+      - ingest_token
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=65532,gid=65532,mode=0700
+    ports:
+      - 127.0.0.1:${API_HOST_PORT:-8080}:8080
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    stop_signal: SIGTERM
+    stop_grace_period: 15s
+
+networks:
+  frontend:
+  backend:
+    internal: true
+
+volumes:
+  postgres_data:
+
+secrets:
+  postgres_password:
+    file: "${POSTGRES_PASSWORD_SECRET_FILE:-../secrets/deployment/postgres-password}"
+  database_url:
+    file: "${DATABASE_URL_SECRET_FILE:-../secrets/deployment/database-url}"
+  ingest_token:
+    file: "${INGEST_TOKEN_SECRET_FILE:-../secrets/deployment/ingest-current.token}"

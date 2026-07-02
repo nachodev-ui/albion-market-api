@@ -1,0 +1,71 @@
+name: Container checks
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .env.example
+      - .gitignore
+      - cmd/**
+      - deploy/**
+      - internal/**
+      - migrations/**
+      - scripts/initialize-deployment.ps1
+      - scripts/test-container.ps1
+      - scripts/test-deployment-compose.ps1
+      - go.mod
+      - go.sum
+      - .github/workflows/container.yml
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .env.example
+      - .gitignore
+      - cmd/**
+      - deploy/**
+      - internal/**
+      - migrations/**
+      - scripts/initialize-deployment.ps1
+      - scripts/test-container.ps1
+      - scripts/test-deployment-compose.ps1
+      - go.mod
+      - go.sum
+      - .github/workflows/container.yml
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    name: Reproducible deployment smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify deployment contracts
+        run: go test ./internal/config ./internal/deployment
+
+      - name: Show Docker versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Build and test secure Compose deployment
+        shell: pwsh
+        run: ./scripts/test-deployment-compose.ps1 -TimeoutSeconds 240
