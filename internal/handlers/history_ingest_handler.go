@@ -14,6 +14,7 @@ import (
 )
 
 func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	startedAt := time.Now()
 	h.historyMetrics.RequestStarted(startedAt)
 
@@ -28,6 +29,7 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 	duplicate := false
 	errorKind := "internal_error"
 	errorDetail := "request ended without a response"
+	authKeyID := "-"
 
 	defer func() {
 		duration := time.Since(startedAt)
@@ -54,6 +56,7 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 			duration,
 			errorKind,
 			errorDetail,
+			authKeyID,
 		)
 	}()
 
@@ -66,13 +69,12 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !authorizedBearer(r.Header.Get("Authorization"), h.bearerTokens) {
-		statusCode = http.StatusUnauthorized
-		errorKind = "unauthorized"
-		errorDetail = "unauthorized"
-		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
+	authResult := h.authenticator.Authenticate(r)
+	if !authResult.Authenticated {
+		statusCode, errorKind, errorDetail = writeAuthenticationFailure(w, authResult.Failure)
 		return
 	}
+	authKeyID = authResult.KeyID
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
 		statusCode = http.StatusUnsupportedMediaType
 		errorKind = "unsupported_content_type"
@@ -193,6 +195,7 @@ func (h *IngestHandler) logHistoryOutcome(
 	duration time.Duration,
 	errorKind string,
 	errorDetail string,
+	authKeyID string,
 ) {
 	if requestID == "" {
 		requestID = "-"
@@ -212,6 +215,7 @@ func (h *IngestHandler) logHistoryOutcome(
 		observability.F("duplicate", duplicate),
 		observability.F("status", statusCode),
 		observability.F("duration_ms", durationMilliseconds(duration)),
+		observability.F("auth_key_id", authKeyID),
 	}
 
 	switch {

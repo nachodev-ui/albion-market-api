@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/nachodev-ui/albion-market-api/internal/config"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
+	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
 	"github.com/nachodev-ui/albion-market-api/internal/observability"
 	"github.com/nachodev-ui/albion-market-api/internal/repository"
 	"github.com/nachodev-ui/albion-market-api/internal/server"
@@ -61,10 +63,23 @@ func main() {
 	historyIngestMetrics := observability.NewHistoryIngestMetrics()
 	databaseMonitor := observability.NewPgxDatabaseMonitor(dbpool)
 
+	authenticator, err := ingestauth.New(cfg.IngestCredentials, ingestauth.Options{
+		RequireHTTPS:      cfg.IngestRequireHTTPS,
+		TrustProxyHeaders: cfg.TrustProxyHeaders,
+	})
+	for index := range cfg.IngestCredentials {
+		cfg.IngestCredentials[index].Token = ""
+	}
+	cfg.IngestCredentials = nil
+	if err != nil {
+		logger.Error("ingest_auth.configure_failed", observability.F("error", err))
+		return
+	}
+
 	healthHandler := handlers.NewHealthHandler(svc)
 	ingestHandler := handlers.NewIngestHandler(
 		svc,
-		[]string{cfg.IngestBearerToken, cfg.IngestPreviousBearerToken},
+		authenticator,
 		cfg.MaxIngestBodyBytes,
 		ingestMetrics,
 		logger,
@@ -123,6 +138,8 @@ func main() {
 			observability.F("history", "/api/v1/history"),
 			observability.F("history_query", "/api/v1/history/query"),
 			observability.F("history_ingest", "/api/v1/ingest/history"),
+			observability.F("ingest_credential_ids", credentialIDs(cfg.IngestCredentialSources)),
+			observability.F("ingest_require_https", cfg.IngestRequireHTTPS),
 			observability.F("cors_origins", len(cfg.CORSAllowedOrigins)),
 			observability.F("rate_limit_enabled", cfg.RateLimitEnabled),
 			observability.F("trust_proxy_headers", cfg.TrustProxyHeaders),
@@ -154,4 +171,12 @@ func main() {
 
 func durationMilliseconds(duration time.Duration) float64 {
 	return float64(duration.Microseconds()) / 1000
+}
+
+func credentialIDs(sources []config.CredentialSource) string {
+	ids := make([]string, 0, len(sources))
+	for _, source := range sources {
+		ids = append(ids, source.ID+":"+source.Source)
+	}
+	return strings.Join(ids, ",")
 }

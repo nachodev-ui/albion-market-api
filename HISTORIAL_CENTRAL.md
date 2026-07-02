@@ -35,7 +35,7 @@ antigua nunca reemplaza una observación más reciente.
 
 ```http
 POST /api/v1/ingest/history
-Authorization: Bearer <INGEST_BEARER_TOKEN>
+Authorization: Bearer <credencial de ingesta>
 Content-Type: application/json
 ```
 
@@ -191,6 +191,12 @@ Para múltiples mercados, objetos o calidades debe preferirse
 ### Ingesta
 
 ```powershell
+$ingestToken = if ($env:INGEST_BEARER_TOKEN) {
+  $env:INGEST_BEARER_TOKEN
+} else {
+  (Get-Content .\secrets\ingest-current.token -Raw).Trim()
+}
+
 $historyBody = @{
   request_id = [guid]::NewGuid().ToString()
   server = "west"
@@ -214,7 +220,7 @@ $historyBody = @{
 Invoke-RestMethod `
   -Method Post `
   -Uri "http://127.0.0.1:8080/api/v1/ingest/history" `
-  -Headers @{ Authorization = "Bearer $env:INGEST_BEARER_TOKEN" } `
+  -Headers @{ Authorization = "Bearer $ingestToken" } `
   -ContentType "application/json" `
   -Body $historyBody
 ```

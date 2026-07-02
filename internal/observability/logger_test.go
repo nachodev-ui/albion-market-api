@@ -41,3 +41,27 @@ func TestLoggerCanForceColors(t *testing.T) {
 		t.Fatalf("colored log = %q, want ANSI cyan code", output.String())
 	}
 }
+
+func TestLoggerRedactsSensitiveFields(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	logger := NewLogger(&output, "never")
+	logger.Info(
+		"security.test",
+		F("upstream_token", "super-secret-value"),
+		F("authorization", "Bearer secret"),
+		F("auth_key_id", "current"),
+	)
+
+	line := output.String()
+	if strings.Contains(line, "super-secret-value") || strings.Contains(line, "Bearer secret") {
+		t.Fatalf("sensitive value leaked in log: %q", line)
+	}
+	if strings.Count(line, `"[REDACTED]"`) != 2 {
+		t.Fatalf("redacted fields = %q, want two redactions", line)
+	}
+	if !strings.Contains(line, `auth_key_id="current"`) {
+		t.Fatalf("safe credential identifier was redacted: %q", line)
+	}
+}

@@ -3,40 +3,56 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/joho/godotenv"
+
+	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
 )
 
+const maxSecretFileBytes = 16 << 10
+
+type CredentialSource struct {
+	ID     string
+	Source string
+}
+
 type Config struct {
-	AppEnv                    string
-	HTTPAddr                  string
-	DatabaseURL               string
-	ReadTimeout               time.Duration
-	ReadHeaderTimeout         time.Duration
-	WriteTimeout              time.Duration
-	IdleTimeout               time.Duration
-	MaxHeaderBytes            int
-	IngestBearerToken         string
-	IngestPreviousBearerToken string
-	MaxIngestBodyBytes        int64
-	MaxPublicBodyBytes        int64
-	CORSAllowedOrigins        []string
-	RateLimitEnabled          bool
-	RateLimitRequestsPerSec   float64
-	RateLimitBurst            int
-	RateLimitClientTTL        time.Duration
-	TrustProxyHeaders         bool
-	LogColor                  string
+	AppEnv                  string
+	HTTPAddr                string
+	DatabaseURL             string
+	ReadTimeout             time.Duration
+	ReadHeaderTimeout       time.Duration
+	WriteTimeout            time.Duration
+	IdleTimeout             time.Duration
+	MaxHeaderBytes          int
+	IngestCredentials       []ingestauth.Credential
+	IngestCredentialSources []CredentialSource
+	IngestRequireHTTPS      bool
+	MaxIngestBodyBytes      int64
+	MaxPublicBodyBytes      int64
+	CORSAllowedOrigins      []string
+	RateLimitEnabled        bool
+	RateLimitRequestsPerSec float64
+	RateLimitBurst          int
+	RateLimitClientTTL      time.Duration
+	TrustProxyHeaders       bool
+	LogColor                string
 }
 
 func Load() (Config, error) {
-	_ = godotenv.Load(".env.example")
-	_ = godotenv.Overload(".env.local")
+	if err := loadDotEnvFiles(); err != nil {
+		return Config{}, err
+	}
 
 	appEnv := strings.ToLower(strings.TrimSpace(getEnv("APP_ENV", "development")))
+	if appEnv == "" {
+		appEnv = "development"
+	}
 
 	readTimeout, err := durationEnv("READ_TIMEOUT", 5*time.Second)
 	if err != nil {
@@ -86,27 +102,47 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	ingestRequireHTTPS, err := boolEnv("INGEST_REQUIRE_HTTPS", appEnv == "production")
+	if err != nil {
+		return Config{}, err
+	}
+	minimumTokenLength, err := intEnv("INGEST_MIN_TOKEN_LENGTH", 32)
+	if err != nil {
+		return Config{}, err
+	}
+	if minimumTokenLength < 16 || minimumTokenLength > maxSecretFileBytes {
+		return Config{}, fmt.Errorf("INGEST_MIN_TOKEN_LENGTH must be between 16 and %d", maxSecretFileBytes)
+	}
+	if appEnv == "production" && minimumTokenLength < 32 {
+		return Config{}, fmt.Errorf("INGEST_MIN_TOKEN_LENGTH must be at least 32 in production")
+	}
+
+	credentials, credentialSources, err := loadIngestCredentials(appEnv, minimumTokenLength)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
-		AppEnv:                    appEnv,
-		HTTPAddr:                  strings.TrimSpace(getEnv("HTTP_ADDR", ":8080")),
-		DatabaseURL:               strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		ReadTimeout:               readTimeout,
-		ReadHeaderTimeout:         readHeaderTimeout,
-		WriteTimeout:              writeTimeout,
-		IdleTimeout:               idleTimeout,
-		MaxHeaderBytes:            maxHeaderBytes,
-		IngestBearerToken:         strings.TrimSpace(os.Getenv("INGEST_BEARER_TOKEN")),
-		IngestPreviousBearerToken: strings.TrimSpace(os.Getenv("INGEST_BEARER_TOKEN_PREVIOUS")),
-		MaxIngestBodyBytes:        maxIngestBodyBytes,
-		MaxPublicBodyBytes:        maxPublicBodyBytes,
-		CORSAllowedOrigins:        csvEnv("CORS_ALLOWED_ORIGINS", defaultCORSOrigins(appEnv)),
-		RateLimitEnabled:          rateLimitEnabled,
-		RateLimitRequestsPerSec:   rateLimitRequestsPerSec,
-		RateLimitBurst:            rateLimitBurst,
-		RateLimitClientTTL:        rateLimitClientTTL,
-		TrustProxyHeaders:         trustProxyHeaders,
-		LogColor:                  getEnv("LOG_COLOR", "auto"),
+		AppEnv:                  appEnv,
+		HTTPAddr:                strings.TrimSpace(getEnv("HTTP_ADDR", ":8080")),
+		DatabaseURL:             strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		ReadTimeout:             readTimeout,
+		ReadHeaderTimeout:       readHeaderTimeout,
+		WriteTimeout:            writeTimeout,
+		IdleTimeout:             idleTimeout,
+		MaxHeaderBytes:          maxHeaderBytes,
+		IngestCredentials:       credentials,
+		IngestCredentialSources: credentialSources,
+		IngestRequireHTTPS:      ingestRequireHTTPS,
+		MaxIngestBodyBytes:      maxIngestBodyBytes,
+		MaxPublicBodyBytes:      maxPublicBodyBytes,
+		CORSAllowedOrigins:      csvEnv("CORS_ALLOWED_ORIGINS", defaultCORSOrigins(appEnv)),
+		RateLimitEnabled:        rateLimitEnabled,
+		RateLimitRequestsPerSec: rateLimitRequestsPerSec,
+		RateLimitBurst:          rateLimitBurst,
+		RateLimitClientTTL:      rateLimitClientTTL,
+		TrustProxyHeaders:       trustProxyHeaders,
+		LogColor:                getEnv("LOG_COLOR", "auto"),
 	}
 
 	if cfg.HTTPAddr == "" {
@@ -114,12 +150,6 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
-	}
-	if cfg.IngestBearerToken == "" {
-		return Config{}, fmt.Errorf("INGEST_BEARER_TOKEN is required")
-	}
-	if cfg.IngestPreviousBearerToken != "" && cfg.IngestPreviousBearerToken == cfg.IngestBearerToken {
-		return Config{}, fmt.Errorf("INGEST_BEARER_TOKEN_PREVIOUS must be different from INGEST_BEARER_TOKEN")
 	}
 	if cfg.RateLimitEnabled && cfg.RateLimitRequestsPerSec <= 0 {
 		return Config{}, fmt.Errorf("RATE_LIMIT_REQUESTS_PER_SECOND must be greater than zero when rate limiting is enabled")
@@ -134,9 +164,153 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+func loadDotEnvFiles() error {
+	initialEnvironment := strings.ToLower(strings.TrimSpace(getEnv("APP_ENV", "development")))
+	loadFiles, err := boolEnv("LOAD_DOTENV", initialEnvironment != "production")
+	if err != nil {
+		return err
+	}
+	if !loadFiles {
+		return nil
+	}
+
+	// Process-level environment variables always win. .env.example is never
+	// loaded at runtime because it contains documentation placeholders.
+	_ = godotenv.Load(".env.local")
+	environment := strings.ToLower(strings.TrimSpace(getEnv("APP_ENV", initialEnvironment)))
+	if environment != "" {
+		_ = godotenv.Load(".env." + environment + ".local")
+		_ = godotenv.Load(".env." + environment)
+	}
+	_ = godotenv.Load(".env")
+	return nil
+}
+
+func loadIngestCredentials(appEnv string, minimumLength int) ([]ingestauth.Credential, []CredentialSource, error) {
+	currentID := strings.TrimSpace(getEnv("INGEST_BEARER_TOKEN_ID", "current"))
+	currentToken, currentSource, err := secretFromEnvOrFile("INGEST_BEARER_TOKEN", "INGEST_BEARER_TOKEN_FILE", appEnv)
+	if err != nil {
+		return nil, nil, err
+	}
+	if currentToken == "" {
+		return nil, nil, fmt.Errorf("INGEST_BEARER_TOKEN or INGEST_BEARER_TOKEN_FILE is required")
+	}
+	if err := validateCredential(currentID, currentToken, minimumLength); err != nil {
+		return nil, nil, fmt.Errorf("current ingest credential: %w", err)
+	}
+
+	credentials := []ingestauth.Credential{{ID: currentID, Token: currentToken}}
+	sources := []CredentialSource{{ID: currentID, Source: currentSource}}
+
+	previousID := strings.TrimSpace(getEnv("INGEST_BEARER_TOKEN_PREVIOUS_ID", "previous"))
+	previousToken, previousSource, err := secretFromEnvOrFile(
+		"INGEST_BEARER_TOKEN_PREVIOUS",
+		"INGEST_BEARER_TOKEN_PREVIOUS_FILE",
+		appEnv,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if previousToken != "" {
+		if err := validateCredential(previousID, previousToken, minimumLength); err != nil {
+			return nil, nil, fmt.Errorf("previous ingest credential: %w", err)
+		}
+		if previousID == currentID {
+			return nil, nil, fmt.Errorf("INGEST_BEARER_TOKEN_PREVIOUS_ID must be different from INGEST_BEARER_TOKEN_ID")
+		}
+		if previousToken == currentToken {
+			return nil, nil, fmt.Errorf("previous ingest token must be different from the current token")
+		}
+		credentials = append(credentials, ingestauth.Credential{ID: previousID, Token: previousToken})
+		sources = append(sources, CredentialSource{ID: previousID, Source: previousSource})
+	}
+
+	return credentials, sources, nil
+}
+
+func secretFromEnvOrFile(valueEnv, fileEnv, appEnv string) (string, string, error) {
+	value := strings.TrimSpace(os.Getenv(valueEnv))
+	filePath := strings.TrimSpace(os.Getenv(fileEnv))
+	if value != "" && filePath != "" {
+		return "", "", fmt.Errorf("%s and %s are mutually exclusive", valueEnv, fileEnv)
+	}
+	if value != "" {
+		return value, "environment", nil
+	}
+	if filePath == "" {
+		return "", "", nil
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return "", "", fmt.Errorf("read %s: %w", fileEnv, err)
+	}
+	if info.IsDir() {
+		return "", "", fmt.Errorf("%s must reference a file", fileEnv)
+	}
+	if info.Size() > maxSecretFileBytes {
+		return "", "", fmt.Errorf("%s exceeds %d bytes", fileEnv, maxSecretFileBytes)
+	}
+	if appEnv == "production" && runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
+		return "", "", fmt.Errorf("%s permissions are too broad; use 0600 or stricter", fileEnv)
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", "", fmt.Errorf("read %s: %w", fileEnv, err)
+	}
+	secret := strings.TrimSpace(string(content))
+	if secret == "" {
+		return "", "", fmt.Errorf("%s is empty", fileEnv)
+	}
+	return secret, "file", nil
+}
+
+func validateCredential(id, token string, minimumLength int) error {
+	if !validCredentialID(id) {
+		return fmt.Errorf("credential id must contain 1-64 letters, numbers, dots, underscores or hyphens")
+	}
+	if len(token) < minimumLength {
+		return fmt.Errorf("token must contain at least %d characters", minimumLength)
+	}
+	if len(token) > maxSecretFileBytes {
+		return fmt.Errorf("token exceeds %d characters", maxSecretFileBytes)
+	}
+	for _, character := range token {
+		if unicode.IsSpace(character) || unicode.IsControl(character) {
+			return fmt.Errorf("token must not contain whitespace or control characters")
+		}
+	}
+	upper := strings.ToUpper(token)
+	if strings.Contains(upper, "CHANGE_ME") || strings.Contains(upper, "REPLACE_ME") {
+		return fmt.Errorf("token still contains a placeholder")
+	}
+	switch strings.ToLower(token) {
+	case "secret", "token", "password", "changeme":
+		return fmt.Errorf("token is a known insecure placeholder")
+	}
+	return nil
+}
+
+func validCredentialID(value string) bool {
+	if len(value) < 1 || len(value) > 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '.' || character == '_' || character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
 	return fallback
 }
