@@ -39,3 +39,6 @@ secrets/
 /artifacts/postgres-backups/
 /artifacts/postgres-restore-verification/
 /artifacts/postgres-backup-restore-test/
+
+# Logs de tareas programadas PostgreSQL
+/artifacts/postgres-scheduled-tasks/
