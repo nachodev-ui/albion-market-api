@@ -146,9 +146,19 @@ try {
         throw "Migration container was not created."
     }
     $MigrationExitCode = Invoke-Docker -Arguments @("inspect", "--format", "{{.State.ExitCode}}", $MigrationId) -CaptureOutput
+    $MigrationLogs = Invoke-Compose -Arguments @("logs", "--no-color", "migrate") -CaptureOutput
     if ($MigrationExitCode -ne "0") {
-        $MigrationLogs = Invoke-Compose -Arguments @("logs", "--no-color", "migrate") -CaptureOutput
         throw "Migration service exited with code ${MigrationExitCode}:`n$MigrationLogs"
+    }
+
+    $ExpectedMigrations = @(Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "migrations") -Filter "*.sql" -File | Sort-Object Name)
+    if ($ExpectedMigrations.Count -eq 0) {
+        throw "No SQL migrations were found."
+    }
+    foreach ($Migration in $ExpectedMigrations) {
+        if ($MigrationLogs -notmatch [Regex]::Escape("Applying $($Migration.Name)")) {
+            throw "Migration $($Migration.Name) was not executed:`n$MigrationLogs"
+        }
     }
 
     Write-Host "[5/8] Verifying the public health endpoint..."
@@ -182,10 +192,13 @@ try {
         }
     }
 
-    $SecretDestinations = @($Inspect.Mounts | ForEach-Object { $_.Destination })
     foreach ($Destination in @("/run/secrets/database_url", "/run/secrets/ingest_token")) {
-        if ($SecretDestinations -notcontains $Destination) {
-            throw "Expected secret mount $Destination was not found."
+        $SecretMount = @($Inspect.Mounts | Where-Object { $_.Destination -eq $Destination })
+        if ($SecretMount.Count -ne 1) {
+            throw "Expected exactly one secret mount at $Destination; found $($SecretMount.Count)."
+        }
+        if ($SecretMount[0].RW) {
+            throw "Secret mount $Destination is writable."
         }
     }
 

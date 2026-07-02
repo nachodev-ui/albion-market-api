@@ -63,10 +63,14 @@ El despliegue mantenido en `deploy/compose.yaml` monta tres secretos:
 ```
 
 La API recibe solo las rutas `DATABASE_URL_FILE` e `INGEST_BEARER_TOKEN_FILE`;
-los valores no aparecen en `docker inspect ... Config.Env`. Docker Compose puede
-representar sus secretos montados con permisos `0444`. Esta excepción se admite
-únicamente bajo `/run/secrets`, donde el runtime concede el archivo de forma
-explícita al servicio y lo monta como solo lectura.
+los valores no aparecen en `docker inspect ... Config.Env`. Los secretos
+respaldados por archivos son bind mounts y conservan los permisos del host.
+
+En Linux, el inicializador protege el directorio `secrets/deployment/` con
+modo `0700` y configura sus archivos como `0444`. El directorio privado
+impide que otros usuarios del host alcancen los valores, mientras que el modo
+del archivo permite que el UID no root `65532` lo lea dentro del contenedor.
+El mount bajo `/run/secrets` permanece de solo lectura.
 
 Genera la configuración sin imprimir valores mediante:
 

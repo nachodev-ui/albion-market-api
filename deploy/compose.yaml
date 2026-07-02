@@ -51,20 +51,21 @@ services:
     entrypoint:
       - /bin/sh
       - -ec
-    command: |
-      export PGPASSWORD="$$(cat /run/secrets/postgres_password)"
-      migration_count=0
-      for migration in $$(find /migrations -maxdepth 1 -type f -name '*.sql' | LC_ALL=C sort); do
-        migration_count=$$((migration_count + 1))
-        echo "Applying $${migration##*/}"
-        psql \
-          --host postgres \
-          --username "$${POSTGRES_USER}" \
-          --dbname "$${POSTGRES_DB}" \
-          --set ON_ERROR_STOP=1 \
-          --file "$${migration}"
-      done
-      test "$${migration_count}" -gt 0
+    command:
+      - |
+        export PGPASSWORD="$$(cat /run/secrets/postgres_password)"
+        migration_count=0
+        for migration in $$(find /migrations -maxdepth 1 -type f -name '*.sql' | LC_ALL=C sort); do
+          migration_count=$$((migration_count + 1))
+          echo "Applying $${migration##*/}"
+          psql \
+            --host postgres \
+            --username "$${POSTGRES_USER}" \
+            --dbname "$${POSTGRES_DB}" \
+            --set ON_ERROR_STOP=1 \
+            --file "$${migration}"
+        done
+        test "$${migration_count}" -gt 0
 
   api:
     image: ${API_IMAGE:-albion-market-api:local}

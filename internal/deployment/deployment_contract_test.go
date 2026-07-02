@@ -93,6 +93,24 @@ func TestDeploymentSecretsAreFileBackedAndExcludedFromBuild(t *testing.T) {
 	requireContains(t, gitignore, "/deploy/compose.env.local")
 }
 
+func TestLinuxSecretFilesSupportNonRootComposeRuntime(t *testing.T) {
+	for _, scriptPath := range [][]string{
+		{"scripts", "initialize-deployment.ps1"},
+		{"scripts", "test-container.ps1"},
+	} {
+		script := readProjectFile(t, scriptPath...)
+		requireContains(t, script, "& chmod 700 $Parent")
+		requireContains(t, script, "& chmod 444 $Path")
+		if strings.Contains(script, "& chmod 600 $Path") {
+			t.Fatalf("%s must not create file-backed Compose secrets readable only by the host UID", filepath.Join(scriptPath...))
+		}
+	}
+
+	compose := readProjectFile(t, "deploy", "compose.yaml")
+	migrate := composeServiceBlock(t, compose, "migrate")
+	requireContains(t, migrate, "command:\n      - |")
+	requireContains(t, migrate, `echo "Applying $${migration##*/}"`)
+}
 func readProjectFile(t *testing.T, parts ...string) string {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)

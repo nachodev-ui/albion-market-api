@@ -132,7 +132,7 @@ Compose concede cada secreto únicamente al servicio que lo necesita:
 | `/run/secrets/database_url` | API mediante `DATABASE_URL_FILE` |
 | `/run/secrets/ingest_token` | API mediante `INGEST_BEARER_TOKEN_FILE` |
 
-Los valores no se incorporan a la imagen ni a las variables del contenedor de API. Los archivos bajo `/run/secrets` son gestionados y montados como solo lectura por el runtime. Fuera de ese directorio, los archivos secretos de producción en Linux mantienen la exigencia `0600` o más restrictiva.
+Los valores no se incorporan a la imagen ni a las variables del contenedor de API. Los archivos bajo `/run/secrets` se montan como solo lectura. En Linux, `initialize-deployment.ps1` protege el directorio anfitrión con modo `0700` y deja cada archivo en `0444`: el directorio impide que otros usuarios del host alcancen los valores, mientras que el archivo bind-mounted puede ser leído por el UID no root `65532` dentro del contenedor. Para archivos secretos usados directamente fuera de Docker Compose, se mantiene la recomendación `0600`.
 
 ## Endurecimiento del servicio API
 

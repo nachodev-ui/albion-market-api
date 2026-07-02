@@ -69,13 +69,28 @@ function Write-PrivateTextFile {
 
     $Parent = Split-Path -Parent $Path
     New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+
+    if ($env:OS -ne "Windows_NT") {
+        & chmod 700 $Parent
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not restrict the secret directory $Parent"
+        }
+    }
+
+    if (Test-Path -LiteralPath $Path) {
+        Remove-Item -LiteralPath $Path -Force
+    }
+
     $Utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path, $Value, $Utf8WithoutBom)
 
     if ($env:OS -ne "Windows_NT") {
-        & chmod 600 $Path
+        # File-backed Compose secrets are bind mounts. The parent directory
+        # remains private on the host, while the mounted file must be readable
+        # by the non-root container UID.
+        & chmod 444 $Path
         if ($LASTEXITCODE -ne 0) {
-            throw "Could not set private permissions on $Path"
+            throw "Could not set read-only Compose secret permissions on $Path"
         }
     }
 }
