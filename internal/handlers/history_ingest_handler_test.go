@@ -28,7 +28,7 @@ func TestHistoryIngestHandlerRecordsMetricsAndOrderedLog(t *testing.T) {
 			AcceptedBuckets:    2,
 			HistoryRowsTouched: 2,
 		}},
-		[]string{"secret"},
+		testAuthenticator(t, "secret"),
 		1<<20,
 		priceMetrics,
 		observability.NewLogger(&logs, "never"),
@@ -66,6 +66,7 @@ func TestHistoryIngestHandlerRecordsMetricsAndOrderedLog(t *testing.T) {
 		"duplicate=false",
 		"status=202",
 		"duration_ms=",
+		`auth_key_id="current"`,
 	}
 	last := -1
 	for _, fragment := range ordered {
@@ -89,7 +90,7 @@ func TestHistoryIngestHandlerReturnsOKForIdempotentDuplicate(t *testing.T) {
 			HistoryRowsTouched: 2,
 			Duplicate:          true,
 		}},
-		[]string{"secret"},
+		testAuthenticator(t, "secret"),
 		1<<20,
 		observability.NewIngestMetrics(),
 		nil,
@@ -116,7 +117,7 @@ func TestHistoryIngestHandlerHidesInternalErrorAndLogsDetail(t *testing.T) {
 	var logs bytes.Buffer
 	handler := NewIngestHandler(
 		fakeIngestService{historyErr: errors.New("password authentication failed")},
-		[]string{"secret"},
+		testAuthenticator(t, "secret"),
 		1<<20,
 		observability.NewIngestMetrics(),
 		observability.NewLogger(&logs, "never"),
@@ -157,7 +158,7 @@ func TestHistoryIngestHandlerMapsValidationAndConflicts(t *testing.T) {
 			t.Parallel()
 			handler := NewIngestHandler(
 				fakeIngestService{historyErr: test.err},
-				[]string{"secret"},
+				testAuthenticator(t, "secret"),
 				1<<20,
 				observability.NewIngestMetrics(),
 				nil,
@@ -202,7 +203,7 @@ func TestIngestHistoryRejectsUnsupportedContentType(t *testing.T) {
 
 	handler := NewIngestHandler(
 		fakeIngestService{},
-		[]string{"secret"},
+		testAuthenticator(t, "secret"),
 		1<<20,
 		observability.NewIngestMetrics(),
 		nil,

@@ -22,6 +22,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Reject committed secret files
+        shell: bash
+        run: |
+          forbidden="$(git ls-files | grep -E '(^|/)\.env($|\.)|(^|/)secrets/|\.(token|secret)$' | grep -Ev '(^|/)\.env\.example$' || true)"
+          if [[ -n "$forbidden" ]]; then
+            printf 'Forbidden secret-bearing files are tracked:\n%s\n' "$forbidden"
+            exit 1
+          fi
+          if git grep -nE -e '-----BEGIN ([A-Z ]+ )?PRIVATE KEY-----' -- . ':!*.md'; then
+            echo 'A private key marker was found in tracked source files.'
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:

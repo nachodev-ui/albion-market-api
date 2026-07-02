@@ -10,6 +10,7 @@ import (
 
 	"github.com/nachodev-ui/albion-market-api/internal/domain"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
+	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
 	"github.com/nachodev-ui/albion-market-api/internal/observability"
 	"github.com/nachodev-ui/albion-market-api/internal/service"
 )
@@ -36,14 +37,14 @@ func (routerDatabaseMonitor) Snapshot(context.Context) observability.DatabaseSna
 	return observability.DatabaseSnapshot{Healthy: true}
 }
 
-func newTestRouter() http.Handler {
+func newTestRouter(t *testing.T) http.Handler {
 	marketService := service.NewMarketService(routerRepository{})
 	metrics := observability.NewIngestMetrics()
 	historyMetrics := observability.NewHistoryIngestMetrics()
 
 	return NewRouter(
 		handlers.NewHealthHandler(marketService),
-		handlers.NewIngestHandler(marketService, []string{"secret"}, 1<<20, metrics, nil, historyMetrics),
+		handlers.NewIngestHandler(marketService, routerAuthenticator(t), 1<<20, metrics, nil, historyMetrics),
 		handlers.NewPricesHandler(marketService, 1<<20),
 		handlers.NewHistoryHandler(marketService, 1<<20),
 		handlers.NewStatusHandler("albion-market-api", "test", time.Now(), routerDatabaseMonitor{}, metrics, historyMetrics),
@@ -56,7 +57,7 @@ func TestRouterExposesStatusEndpoint(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 	response := httptest.NewRecorder()
-	newTestRouter().ServeHTTP(response, request)
+	newTestRouter(t).ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
@@ -108,7 +109,7 @@ func TestRouterExposesFrontendReadEndpoints(t *testing.T) {
 
 			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
 			response := httptest.NewRecorder()
-			newTestRouter().ServeHTTP(response, request)
+			newTestRouter(t).ServeHTTP(response, request)
 
 			if response.Code != http.StatusOK {
 				t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
@@ -124,7 +125,7 @@ func TestRouterAllowsFrontendPreflight(t *testing.T) {
 	request.Header.Set("Origin", "http://localhost:5173")
 	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	response := httptest.NewRecorder()
-	newTestRouter().ServeHTTP(response, request)
+	newTestRouter(t).ServeHTTP(response, request)
 
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusNoContent)
@@ -155,9 +156,21 @@ func TestRouterExposesAuthenticatedHistoryIngestEndpoint(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ingest/history", strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer secret")
 	response := httptest.NewRecorder()
-	newTestRouter().ServeHTTP(response, request)
+	newTestRouter(t).ServeHTTP(response, request)
 
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusAccepted, response.Body.String())
 	}
+}
+
+func routerAuthenticator(t *testing.T) *ingestauth.Authenticator {
+	t.Helper()
+	authenticator, err := ingestauth.New(
+		[]ingestauth.Credential{{ID: "current", Token: "secret"}},
+		ingestauth.Options{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return authenticator
 }
