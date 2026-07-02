@@ -379,3 +379,35 @@ de mantenimiento lo justifiquen.
 - FK equivalente para el raw de precios;
 - estrategia de particiones diaria, semanal o mensual si el volumen futuro la exige;
 - runner formal de migraciones y tabla de versión de esquema.
+
+## 12. Revisión final de índices con planes reales
+
+La hipótesis pendiente se valida con:
+
+```powershell
+$env:Path = "C:\Program Files\PostgreSQL\18\bin;$env:Path"
+.\scripts\review-postgres-indexes.ps1
+```
+
+El script ejecuta en modo de solo lectura `EXPLAIN (ANALYZE, BUFFERS)` sobre:
+
+- la consulta real de `current_market_prices`;
+- la consulta real de `market_history_buckets`;
+- ambos raw por `request_id`;
+- los cinco selectores de candidatos usados por la retención.
+
+También genera un plan diagnóstico con `enable_seqscan = off` para saber cuál
+índice elegiría PostgreSQL en `current_market_prices` cuando una lectura por
+índice sea preferible. No cambia la configuración global ni elimina índices.
+
+Los reportes se guardan en:
+
+```text
+artifacts/postgres-index-review/
+```
+
+La metodología y el criterio para decidir sobre
+`current_market_prices_item_loc_idx` están en `POSTGRES_INDEX_REVIEW.md`. Una
+eventual eliminación debe realizarse después, mediante una migración separada y
+solo cuando el reporte resulte `candidate-for-removal` con una muestra
+representativa.

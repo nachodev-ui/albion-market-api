@@ -213,68 +213,119 @@ revisada antes de ejecutarlo.
 
 ## Programador de tareas de Windows
 
-### Preparación
+La retención se registra junto con el backup y la verificación semanal mediante:
 
-1. Ejecuta `apply-retention-indexes.ps1` y la prueba desechable.
-2. Ejecuta un dry-run contra la base real y revisa los reportes.
-3. Restringe el acceso de `.env.local` al usuario que ejecutará la tarea.
-4. Usa una cuenta de PostgreSQL con los permisos mínimos necesarios sobre estas
-   cinco tablas; no uses la contraseña en los argumentos de la tarea.
-5. Desbloquea únicamente el script cuando Windows lo marque como descargado:
-
-```powershell
-Unblock-File .\scripts\postgres-retention.ps1
+```text
+scripts/register-postgres-backup-tasks.ps1
 ```
 
-### Crear la tarea desde la interfaz
+Aunque el nombre conserva compatibilidad con la automatización anterior, ahora
+registra las tres tareas de mantenimiento PostgreSQL bajo `\Albion Market\`:
 
-En **Programador de tareas → Crear tarea**:
+| Tarea | Horario predeterminado |
+|---|---|
+| `PostgreSQL Retention Daily` | todos los días, 03:00 |
+| `PostgreSQL Backup Daily` | todos los días, 03:30 |
+| `PostgreSQL Restore Verification Weekly` | domingos, 04:30 |
 
-- **General**
-  - nombre: `Albion Market PostgreSQL Retention`;
-  - ejecutar aunque el usuario no haya iniciado sesión;
-  - ejecutar con la cuenta que puede leer `.env.local`;
-  - no habilitar privilegios elevados salvo que sean realmente necesarios.
-- **Desencadenadores**
-  - diariamente, por ejemplo a las `03:30`;
-  - habilitar reintento si el equipo estaba apagado.
-- **Acciones**
-  - programa:
+La separación de 30 minutos permite que la limpieza termine antes de capturar el
+backup. El wrapper de la tarea ejecuta exactamente:
 
-    ```text
-    powershell.exe
-    ```
+```powershell
+.\scripts\postgres-retention.ps1 -Mode Apply
+```
 
-  - argumentos:
+con la política configurable de 30/30/90/90/400 días, lotes de 5000 filas y una
+pausa de 100 ms por defecto.
 
-    ```text
-    -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\ruta\albion-market-api\scripts\postgres-retention.ps1" -Mode Apply -BatchSize 5000 -PauseMilliseconds 100
-    ```
+### Registrar las tres tareas sin contraseña de Windows
 
-  - iniciar en:
+Cuando el usuario inicia sesión mediante PIN de Windows Hello y no dispone de la
+contraseña de la cuenta, usa `-RunOnlyWhenLoggedOn`. La sesión debe permanecer
+iniciada; la pantalla puede estar bloqueada.
 
-    ```text
-    C:\ruta\albion-market-api
-    ```
+Abre PowerShell como administrador:
 
-- **Condiciones y configuración**
-  - no iniciar otra instancia si la tarea ya está ejecutándose;
-  - detenerla si supera una hora;
-  - reintentar cada 15 minutos hasta 3 veces;
-  - conservar el historial de ejecución.
+```powershell
+Set-Location "C:\Users\mitsf\Desktop\albion-market-api"
 
-`ExecutionPolicy Bypass` se limita al proceso creado por la tarea. No cambia la
-política global del sistema.
+Get-ChildItem .\scripts -Filter *.ps1 | Unblock-File
 
-### Validación de la tarea
+.\scripts\register-postgres-backup-tasks.ps1 `
+  -BackupDirectory "D:\AlbionBackups\PostgreSQL" `
+  -PostgresBin "C:\Program Files\PostgreSQL\18\bin" `
+  -DailyRetentionTime "03:00" `
+  -DailyBackupTime "03:30" `
+  -WeeklyVerificationDay Sunday `
+  -WeeklyVerificationTime "04:30" `
+  -RunOnlyWhenLoggedOn `
+  -Force
+```
 
-Ejecuta la tarea manualmente una vez y confirma:
+La tarea de retención lee `DATABASE_URL` desde `.env.local`; la contraseña de
+PostgreSQL no se guarda en los argumentos del Programador de tareas.
 
-1. código de resultado `0x0`;
-2. aparición de nuevos archivos en `artifacts/postgres-retention`;
-3. `EligibleAfter = 0` o una explicación conocida para las filas restantes;
-4. funcionamiento normal de la ingesta y de las consultas públicas.
+### Configurar la política programada
 
-Durante las primeras semanas conviene revisar diariamente el `.csv` y mantener
-un `BatchSize` conservador. El particionamiento se reevaluará solo si el volumen,
-los tiempos de borrado o el vacuum empiezan a justificar su complejidad.
+```powershell
+.\scripts\register-postgres-backup-tasks.ps1 `
+  -BackupDirectory "D:\AlbionBackups\PostgreSQL" `
+  -DailyRetentionTime "03:00" `
+  -MarketHistoryRawRetentionDays 30 `
+  -MarketRawRetentionDays 30 `
+  -MarketHistoryRequestsRetentionDays 90 `
+  -MarketRequestsRetentionDays 90 `
+  -MarketHistoryBucketsRetentionDays 400 `
+  -RetentionBatchSize 5000 `
+  -RetentionPauseMilliseconds 100 `
+  -RunOnlyWhenLoggedOn `
+  -Force
+```
+
+El registro rechaza una retención de requests menor que la retención raw
+correspondiente.
+
+### Probar la tarea de retención
+
+```powershell
+Start-ScheduledTask `
+  -TaskPath "\Albion Market\" `
+  -TaskName "PostgreSQL Retention Daily"
+
+do {
+  Start-Sleep -Seconds 5
+  $task = Get-ScheduledTask `
+    -TaskPath "\Albion Market\" `
+    -TaskName "PostgreSQL Retention Daily"
+  Write-Host "Estado retención: $($task.State)"
+} while ($task.State -eq 'Running')
+
+.\scripts\get-postgres-backup-task-status.ps1
+```
+
+El resultado correcto es `LastResultHex = 0x00000000`. También deben aparecer:
+
+```text
+artifacts/postgres-scheduled-tasks/postgres-retention-task-*.log
+artifacts/postgres-retention/postgres-retention-*.log
+artifacts/postgres-retention/postgres-retention-*.csv
+artifacts/postgres-retention/postgres-retention-*.json
+```
+
+Revisa que `EligibleAfter` sea cero. Durante las primeras semanas conviene
+inspeccionar el CSV diariamente.
+
+### Comportamiento operativo
+
+La tarea:
+
+- usa una sola instancia; una segunda ejecución se ignora;
+- se reintenta hasta tres veces cada 15 minutos;
+- tiene un límite de dos horas;
+- se ejecuta cuando Windows vuelve a estar disponible si perdió el horario;
+- no despierta el equipo automáticamente;
+- elimina transcripciones de tarea con más de 60 días;
+- nunca limpia `current_market_prices`.
+
+El particionamiento sigue aplazado. Debe reevaluarse solo cuando el volumen, el
+tiempo de borrado, el vacuum o el tamaño de backups justifiquen su complejidad.

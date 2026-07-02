@@ -160,76 +160,67 @@ script de verificación siempre genera su propio nombre aleatorio.
 
 ## Programador de tareas de Windows
 
-La configuración automatizada registra dos tareas bajo `\Albion Market\`:
+La configuración automatizada registra tres tareas bajo `\Albion Market\`:
 
+- `PostgreSQL Retention Daily`: todos los días a las `03:00`.
 - `PostgreSQL Backup Daily`: todos los días a las `03:30`.
 - `PostgreSQL Restore Verification Weekly`: domingos a las `04:30`.
 
-Los horarios son configurables. Los valores predeterminados dejan una hora entre
-la retención recomendada de las `03:00` y el backup, y otra hora antes de la
+Los horarios son configurables. Los valores predeterminados dejan 30 minutos entre
+la retención de las `03:00` y el backup, y una hora entre el backup dominical y la
 verificación semanal. La verificación siempre usa el conjunto completo más
 reciente.
 
 ### Preparación
 
-1. Ejecuta y valida `test-postgres-backup-restore.ps1`.
-2. Confirma que el backup real y `verify-latest-postgres-backup.ps1` funcionan.
+1. Ejecuta y valida `test-postgres-backup-restore.ps1` y
+   `test-postgres-retention.ps1`.
+2. Confirma que el backup real, la restauración del último backup y el dry-run
+   de retención funcionan.
 3. Mantén `.env.local` accesible solo para la cuenta de Windows que ejecutará las
    tareas.
-4. Usa una carpeta de backups fuera del repositorio. El valor predeterminado es:
+4. Usa una carpeta de backups fuera del repositorio, por ejemplo:
 
    ```text
-   %USERPROFILE%\Documents\AlbionBackups\PostgreSQL
+   D:\AlbionBackups\PostgreSQL
    ```
 
-5. Ejecuta PowerShell como administrador para crear la carpeta del Programador de
-   tareas y registrar tareas que funcionen con la sesión cerrada.
+5. Ejecuta PowerShell como administrador para crear la carpeta del Programador
+   de tareas.
 
-La contraseña de PostgreSQL no se escribe en los argumentos de las tareas. Los
-scripts siguen leyendo `DATABASE_URL` o `POSTGRES_ADMIN_URL` desde el entorno o
-`.env.local` y usan un `PGPASSFILE` temporal.
+La contraseña de PostgreSQL no se escribe en los argumentos. Los scripts leen
+`DATABASE_URL` o `POSTGRES_ADMIN_URL` desde el entorno o `.env.local` y usan un
+`PGPASSFILE` temporal.
 
-### Registrar ambas tareas
+### Registrar las tres tareas
 
-Desde la raíz del repositorio, en PowerShell abierto como administrador:
+Cuando Windows se inicia con PIN y no se dispone de la contraseña de la cuenta,
+registra las tareas con `-RunOnlyWhenLoggedOn`. La sesión debe permanecer
+iniciada, aunque la pantalla puede estar bloqueada.
 
 ```powershell
+Set-Location "C:\Users\mitsf\Desktop\albion-market-api"
+
 Get-ChildItem .\scripts -Filter *.ps1 | Unblock-File
 
 .\scripts\register-postgres-backup-tasks.ps1 `
-  -BackupDirectory "$env:USERPROFILE\Documents\AlbionBackups\PostgreSQL" `
+  -BackupDirectory "D:\AlbionBackups\PostgreSQL" `
   -PostgresBin "C:\Program Files\PostgreSQL\18\bin" `
+  -DailyRetentionTime "03:00" `
   -DailyBackupTime "03:30" `
   -WeeklyVerificationDay Sunday `
-  -WeeklyVerificationTime "04:30"
-```
-
-El script solicitará la credencial de Windows del usuario actual. Esa credencial
-la guarda el Programador de tareas mediante los mecanismos de Windows; no se
-escribe en el repositorio ni en los argumentos visibles de la acción.
-
-Para reemplazar tareas ya registradas:
-
-```powershell
-.\scripts\register-postgres-backup-tasks.ps1 `
-  -BackupDirectory "$env:USERPROFILE\Documents\AlbionBackups\PostgreSQL" `
-  -Force
-```
-
-Para equipos donde solo deban ejecutarse mientras la sesión esté abierta:
-
-```powershell
-.\scripts\register-postgres-backup-tasks.ps1 `
+  -WeeklyVerificationTime "04:30" `
   -RunOnlyWhenLoggedOn `
   -Force
 ```
 
-Ese modo no pide contraseña de Windows, pero no cumple el requisito de ejecutar
-con la sesión cerrada.
+El script reemplaza las tareas anteriores cuando se usa `-Force`. Si existe una
+contraseña real de Windows y se necesita ejecución con la sesión cerrada, omite
+`-RunOnlyWhenLoggedOn`; el Programador solicitará esa credencial.
 
 ### Propiedades registradas
 
-Ambas tareas:
+Las tres tareas:
 
 - usan Windows PowerShell sin perfil y sin interacción;
 - inician en la raíz del repositorio para poder leer `.env.local`;
@@ -247,7 +238,15 @@ límite de cuatro horas.
 
 ### Probar inmediatamente las tareas registradas
 
-Primero ejecuta el backup mediante el Programador de tareas:
+Primero ejecuta la retención mediante el Programador de tareas:
+
+```powershell
+Start-ScheduledTask `
+  -TaskPath '\Albion Market\' `
+  -TaskName 'PostgreSQL Retention Daily'
+```
+
+Espera a que termine y revisa el estado. Después ejecuta el backup:
 
 ```powershell
 Start-ScheduledTask `
@@ -300,6 +299,7 @@ reportes ni `.env.local`.
 Los wrappers que deben usarse como acciones son:
 
 ```text
+scripts\invoke-postgres-retention-task.ps1
 scripts\invoke-postgres-backup-task.ps1
 scripts\invoke-postgres-restore-verification-task.ps1
 ```

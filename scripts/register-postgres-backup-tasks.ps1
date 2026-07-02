@@ -5,6 +5,9 @@ param(
     [string]$PostgresBin = 'C:\Program Files\PostgreSQL\18\bin',
 
     [ValidatePattern('^(?:[01]\d|2[0-3]):[0-5]\d$')]
+    [string]$DailyRetentionTime = '03:00',
+
+    [ValidatePattern('^(?:[01]\d|2[0-3]):[0-5]\d$')]
     [string]$DailyBackupTime = '03:30',
 
     [ValidateSet('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')]
@@ -13,8 +16,39 @@ param(
     [ValidatePattern('^(?:[01]\d|2[0-3]):[0-5]\d$')]
     [string]$WeeklyVerificationTime = '04:30',
 
+    [ValidateRange(1, 36500)]
+    [int]$MarketHistoryRawRetentionDays = 30,
+
+    [ValidateRange(1, 36500)]
+    [int]$MarketRawRetentionDays = 30,
+
+    [ValidateRange(1, 36500)]
+    [int]$MarketHistoryRequestsRetentionDays = 90,
+
+    [ValidateRange(1, 36500)]
+    [int]$MarketRequestsRetentionDays = 90,
+
+    [ValidateRange(366, 36500)]
+    [int]$MarketHistoryBucketsRetentionDays = 400,
+
+    [ValidateRange(1, 100000)]
+    [int]$RetentionBatchSize = 5000,
+
+    [ValidateRange(0, 60000)]
+    [int]$RetentionPauseMilliseconds = 100,
+
+    [ValidateRange(1, 3600)]
+    [int]$RetentionLockTimeoutSeconds = 5,
+
+    [ValidateRange(1, 86400)]
+    [int]$RetentionStatementTimeoutSeconds = 120,
+
+    [ValidateRange(0, 1000000)]
+    [int]$RetentionMaxBatchesPerTable = 0,
+
+    [Alias('RetentionDays')]
     [ValidateRange(1, 3650)]
-    [int]$RetentionDays = 30,
+    [int]$BackupRetentionDays = 30,
 
     [ValidateRange(1, 1000)]
     [int]$MinimumBackups = 7,
@@ -99,7 +133,8 @@ function Register-AlbionScheduledTask {
             -TaskName $Name `
             -TaskPath $TaskPath `
             -InputObject $task `
-            -Force:$Force | Out-Null
+            -Force:$Force `
+            -ErrorAction Stop | Out-Null
     } else {
         Register-ScheduledTask `
             -TaskName $Name `
@@ -111,8 +146,16 @@ function Register-AlbionScheduledTask {
             -User $Credential.UserName `
             -Password $PlainPassword `
             -RunLevel Limited `
-            -Force:$Force | Out-Null
+            -Force:$Force `
+            -ErrorAction Stop | Out-Null
     }
+}
+
+if ($MarketHistoryRequestsRetentionDays -lt $MarketHistoryRawRetentionDays) {
+    throw 'MarketHistoryRequestsRetentionDays must be greater than or equal to MarketHistoryRawRetentionDays.'
+}
+if ($MarketRequestsRetentionDays -lt $MarketRawRetentionDays) {
+    throw 'MarketRequestsRetentionDays must be greater than or equal to MarketRawRetentionDays.'
 }
 
 Import-Module ScheduledTasks -ErrorAction Stop
@@ -132,6 +175,7 @@ if (-not $TaskPath.EndsWith('\')) {
 
 $requiredPaths = @(
     (Join-Path $repoRoot '.env.local'),
+    (Join-Path $PSScriptRoot 'invoke-postgres-retention-task.ps1'),
     (Join-Path $PSScriptRoot 'invoke-postgres-backup-task.ps1'),
     (Join-Path $PSScriptRoot 'invoke-postgres-restore-verification-task.ps1'),
     (Join-Path $PostgresBin 'psql.exe'),
@@ -168,8 +212,28 @@ try {
         throw "Windows PowerShell executable was not found: $powershellPath"
     }
 
+    $retentionWrapper = Join-Path $PSScriptRoot 'invoke-postgres-retention-task.ps1'
     $backupWrapper = Join-Path $PSScriptRoot 'invoke-postgres-backup-task.ps1'
     $verificationWrapper = Join-Path $PSScriptRoot 'invoke-postgres-restore-verification-task.ps1'
+
+    $retentionArguments = @(
+        '-NoProfile'
+        '-NonInteractive'
+        '-ExecutionPolicy', 'Bypass'
+        '-File', (ConvertTo-CommandLineQuotedValue $retentionWrapper)
+        '-PostgresBin', (ConvertTo-CommandLineQuotedValue $PostgresBin)
+        '-MarketHistoryRawRetentionDays', [string]$MarketHistoryRawRetentionDays
+        '-MarketRawRetentionDays', [string]$MarketRawRetentionDays
+        '-MarketHistoryRequestsRetentionDays', [string]$MarketHistoryRequestsRetentionDays
+        '-MarketRequestsRetentionDays', [string]$MarketRequestsRetentionDays
+        '-MarketHistoryBucketsRetentionDays', [string]$MarketHistoryBucketsRetentionDays
+        '-BatchSize', [string]$RetentionBatchSize
+        '-PauseMilliseconds', [string]$RetentionPauseMilliseconds
+        '-LockTimeoutSeconds', [string]$RetentionLockTimeoutSeconds
+        '-StatementTimeoutSeconds', [string]$RetentionStatementTimeoutSeconds
+        '-MaxBatchesPerTable', [string]$RetentionMaxBatchesPerTable
+        '-LogDirectory', (ConvertTo-CommandLineQuotedValue $logDirectory)
+    ) -join ' '
 
     $backupArguments = @(
         '-NoProfile'
@@ -178,7 +242,7 @@ try {
         '-File', (ConvertTo-CommandLineQuotedValue $backupWrapper)
         '-BackupDirectory', (ConvertTo-CommandLineQuotedValue $BackupDirectory)
         '-PostgresBin', (ConvertTo-CommandLineQuotedValue $PostgresBin)
-        '-RetentionDays', [string]$RetentionDays
+        '-RetentionDays', [string]$BackupRetentionDays
         '-MinimumBackups', [string]$MinimumBackups
         '-LogDirectory', (ConvertTo-CommandLineQuotedValue $logDirectory)
     ) -join ' '
@@ -193,6 +257,11 @@ try {
         '-LogDirectory', (ConvertTo-CommandLineQuotedValue $logDirectory)
     ) -join ' '
 
+    $retentionAction = New-ScheduledTaskAction `
+        -Execute $powershellPath `
+        -Argument $retentionArguments `
+        -WorkingDirectory $repoRoot
+
     $backupAction = New-ScheduledTaskAction `
         -Execute $powershellPath `
         -Argument $backupArguments `
@@ -203,6 +272,10 @@ try {
         -Argument $verificationArguments `
         -WorkingDirectory $repoRoot
 
+    $retentionTrigger = New-ScheduledTaskTrigger `
+        -Daily `
+        -At (ConvertTo-TaskDateTime $DailyRetentionTime)
+
     $backupTrigger = New-ScheduledTaskTrigger `
         -Daily `
         -At (ConvertTo-TaskDateTime $DailyBackupTime)
@@ -212,6 +285,15 @@ try {
         -WeeksInterval 1 `
         -DaysOfWeek $WeeklyVerificationDay `
         -At (ConvertTo-TaskDateTime $WeeklyVerificationTime)
+
+    $retentionSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 2) `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 15)
 
     $backupSettings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
@@ -230,6 +312,14 @@ try {
         -ExecutionTimeLimit (New-TimeSpan -Hours 4) `
         -RestartCount 2 `
         -RestartInterval (New-TimeSpan -Minutes 30)
+
+    Register-AlbionScheduledTask `
+        -Name 'PostgreSQL Retention Daily' `
+        -Description 'Deletes expired PostgreSQL audit, request, and history rows in bounded transactions.' `
+        -Action $retentionAction `
+        -Trigger $retentionTrigger `
+        -Settings $retentionSettings `
+        -PlainPassword $plainPassword
 
     Register-AlbionScheduledTask `
         -Name 'PostgreSQL Backup Daily' `
@@ -253,15 +343,11 @@ try {
     $plainPassword = $null
 }
 
-Write-Host 'PostgreSQL scheduled tasks registered successfully.'
+Write-Host 'PostgreSQL maintenance scheduled tasks registered successfully.'
 Write-Host "TaskPath=$TaskPath"
+Write-Host "DailyRetention=$DailyRetentionTime"
 Write-Host "DailyBackup=$DailyBackupTime"
 Write-Host "WeeklyVerification=$WeeklyVerificationDay $WeeklyVerificationTime"
 Write-Host "BackupDirectory=$BackupDirectory"
 Write-Host "TaskUser=$TaskUser"
 Write-Host "RunOnlyWhenLoggedOn=$([bool]$RunOnlyWhenLoggedOn)"
-Write-Host ''
-Write-Host 'Run each task once manually and then inspect its status:'
-Write-Host "  Start-ScheduledTask -TaskPath '$TaskPath' -TaskName 'PostgreSQL Backup Daily'"
-Write-Host "  Start-ScheduledTask -TaskPath '$TaskPath' -TaskName 'PostgreSQL Restore Verification Weekly'"
-Write-Host '  .\scripts\get-postgres-backup-task-status.ps1'

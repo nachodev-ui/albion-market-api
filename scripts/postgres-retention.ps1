@@ -101,7 +101,6 @@ function Invoke-PsqlScalar {
         '-A'
         '-t'
         '--set', 'ON_ERROR_STOP=1'
-        '--dbname', $script:DatabaseUrlResolved
         '--file', $SqlPath
     )
 
@@ -109,16 +108,19 @@ function Invoke-PsqlScalar {
         $arguments += @('--set', "$key=$($Variables[$key])")
     }
 
-    $rawOutput = & $script:PsqlPath @arguments 2>&1
-    $exitCode = $LASTEXITCODE
+    $result = Invoke-PostgresTool `
+        -ToolPath $script:PsqlPath `
+        -ConnectionString $script:DatabaseUrlResolved `
+        -ApplicationName 'albion-market-api-retention' `
+        -Arguments $arguments
 
-    if ($exitCode -ne 0) {
-        $message = ($rawOutput | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
-        throw "psql failed with exit code $exitCode while executing $SqlPath.$([Environment]::NewLine)$message"
+    if ($result.ExitCode -ne 0) {
+        $message = ($result.Output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        throw "psql failed with exit code $($result.ExitCode) while executing $SqlPath.$([Environment]::NewLine)$message"
     }
 
     $lines = @(
-        $rawOutput |
+        $result.Output |
             ForEach-Object { $_.ToString().Trim() } |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     )
@@ -176,6 +178,12 @@ if ($MarketHistoryRequestsRetentionDays -lt $MarketHistoryRawRetentionDays) {
 if ($MarketRequestsRetentionDays -lt $MarketRawRetentionDays) {
     throw 'MarketRequestsRetentionDays must be greater than or equal to MarketRawRetentionDays.'
 }
+
+$clientScript = Join-Path $PSScriptRoot 'postgres-client.ps1'
+if (-not (Test-Path -LiteralPath $clientScript -PathType Leaf)) {
+    throw "PostgreSQL client helper was not found: $clientScript"
+}
+. $clientScript
 
 $script:DatabaseUrlResolved = Get-DatabaseUrlFromLocalEnvironment -CurrentValue $DatabaseUrl -Root $repoRoot
 if ([string]::IsNullOrWhiteSpace($script:DatabaseUrlResolved)) {

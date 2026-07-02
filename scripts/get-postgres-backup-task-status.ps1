@@ -14,6 +14,7 @@ if (-not $TaskPath.EndsWith('\')) {
 }
 
 $taskNames = @(
+    'PostgreSQL Retention Daily',
     'PostgreSQL Backup Daily',
     'PostgreSQL Restore Verification Weekly'
 )

@@ -42,3 +42,6 @@ secrets/
 
 # Logs de tareas programadas PostgreSQL
 /artifacts/postgres-scheduled-tasks/
+
+# Reportes locales de revisión de índices PostgreSQL
+/artifacts/postgres-index-review/
