@@ -127,7 +127,7 @@ El endpoint responde:
 - HTTP `200` y `status: ok` cuando PostgreSQL responde.
 - HTTP `503` y `status: degraded` cuando PostgreSQL no está disponible.
 
-No expone la cadena de conexión, tokens, contraseñas ni el texto interno del error de base de datos.
+No expone la cadena de conexión, tokens, contraseñas ni el texto interno del error de base de datos. Los eventos de ingesta incluyen únicamente `auth_key_id`, que identifica la credencial activa sin revelar su valor.
 
 ## Significado de los contadores
 

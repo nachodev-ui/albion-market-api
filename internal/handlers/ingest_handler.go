@@ -3,7 +3,6 @@ package handlers
 import (
 	"compress/gzip"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nachodev-ui/albion-market-api/internal/domain"
+	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
 	"github.com/nachodev-ui/albion-market-api/internal/observability"
 	"github.com/nachodev-ui/albion-market-api/internal/service"
 )
@@ -23,7 +23,7 @@ type ingestService interface {
 
 type IngestHandler struct {
 	service            ingestService
-	bearerTokens       []string
+	authenticator      *ingestauth.Authenticator
 	maxRequestBodySize int64
 	metrics            *observability.IngestMetrics
 	historyMetrics     *observability.HistoryIngestMetrics
@@ -32,20 +32,12 @@ type IngestHandler struct {
 
 func NewIngestHandler(
 	service ingestService,
-	bearerTokens []string,
+	authenticator *ingestauth.Authenticator,
 	maxRequestBodySize int64,
 	metrics *observability.IngestMetrics,
 	logger *observability.Logger,
 	historyMetrics ...*observability.HistoryIngestMetrics,
 ) *IngestHandler {
-	cleanTokens := make([]string, 0, len(bearerTokens))
-	for _, token := range bearerTokens {
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
-		cleanTokens = append(cleanTokens, token)
-	}
 	if maxRequestBodySize <= 0 {
 		maxRequestBodySize = 5 << 20
 	}
@@ -61,7 +53,7 @@ func NewIngestHandler(
 	}
 	return &IngestHandler{
 		service:            service,
-		bearerTokens:       cleanTokens,
+		authenticator:      authenticator,
 		maxRequestBodySize: maxRequestBodySize,
 		metrics:            metrics,
 		historyMetrics:     historyMetricSet,
@@ -70,6 +62,7 @@ func NewIngestHandler(
 }
 
 func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	startedAt := time.Now()
 	h.metrics.RequestStarted(startedAt)
 
@@ -82,6 +75,7 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 	duplicate := false
 	errorKind := "internal_error"
 	errorDetail := "request ended without a response"
+	authKeyID := "-"
 
 	defer func() {
 		duration := time.Since(startedAt)
@@ -105,6 +99,7 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 			duration,
 			errorKind,
 			errorDetail,
+			authKeyID,
 		)
 	}()
 
@@ -117,13 +112,12 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !authorizedBearer(r.Header.Get("Authorization"), h.bearerTokens) {
-		statusCode = http.StatusUnauthorized
-		errorKind = "unauthorized"
-		errorDetail = "unauthorized"
-		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
+	authResult := h.authenticator.Authenticate(r)
+	if !authResult.Authenticated {
+		statusCode, errorKind, errorDetail = writeAuthenticationFailure(w, authResult.Failure)
 		return
 	}
+	authKeyID = authResult.KeyID
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
 		statusCode = http.StatusUnsupportedMediaType
 		errorKind = "unsupported_content_type"
@@ -237,6 +231,7 @@ func (h *IngestHandler) logOutcome(
 	duration time.Duration,
 	errorKind string,
 	errorDetail string,
+	authKeyID string,
 ) {
 	if requestID == "" {
 		requestID = "-"
@@ -254,6 +249,7 @@ func (h *IngestHandler) logOutcome(
 		observability.F("duplicate", duplicate),
 		observability.F("status", statusCode),
 		observability.F("duration_ms", durationMilliseconds(duration)),
+		observability.F("auth_key_id", authKeyID),
 	}
 
 	switch {
@@ -310,22 +306,14 @@ func (h *IngestHandler) requestBodyReader(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func authorizedBearer(headerValue string, expectedTokens []string) bool {
-	if len(expectedTokens) == 0 {
-		return false
+func writeAuthenticationFailure(w http.ResponseWriter, failure ingestauth.FailureReason) (int, string, string) {
+	if failure == ingestauth.FailureInsecureTransport {
+		w.Header().Set("Upgrade", "TLS/1.2")
+		writeJSON(w, http.StatusUpgradeRequired, ingestErrorResponse{Error: "https required"})
+		return http.StatusUpgradeRequired, string(failure), "https required"
 	}
-	const prefix = "Bearer "
-	if !strings.HasPrefix(headerValue, prefix) {
-		return false
-	}
-	provided := strings.TrimSpace(strings.TrimPrefix(headerValue, prefix))
-	if provided == "" {
-		return false
-	}
-	for _, expectedToken := range expectedTokens {
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(expectedToken)) == 1 {
-			return true
-		}
-	}
-	return false
+
+	w.Header().Set("WWW-Authenticate", `Bearer realm="ingest"`)
+	writeJSON(w, http.StatusUnauthorized, ingestErrorResponse{Error: "unauthorized"})
+	return http.StatusUnauthorized, string(failure), "unauthorized"
 }

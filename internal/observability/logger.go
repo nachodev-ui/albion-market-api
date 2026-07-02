@@ -73,9 +73,27 @@ func (l *Logger) write(label, color, event string, fields ...Field) {
 		if strings.TrimSpace(field.Key) == "" {
 			continue
 		}
-		_, _ = fmt.Fprintf(l.writer, " %s=%s", field.Key, formatLogValue(field.Value))
+		_, _ = fmt.Fprintf(l.writer, " %s=%s", field.Key, formatLogField(field.Key, field.Value))
 	}
 	_, _ = io.WriteString(l.writer, "\n")
+}
+
+func formatLogField(key string, value any) string {
+	if isSensitiveLogKey(key) {
+		return `"[REDACTED]"`
+	}
+	return formatLogValue(value)
+}
+
+func isSensitiveLogKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	switch normalized {
+	case "authorization", "proxy_authorization", "database_url", "dsn", "connection_string", "password", "secret", "token":
+		return true
+	}
+	return strings.HasSuffix(normalized, "_token") ||
+		strings.HasSuffix(normalized, "_secret") ||
+		strings.HasSuffix(normalized, "_password")
 }
 
 func formatLogValue(value any) string {

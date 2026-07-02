@@ -23,3 +23,7 @@ benchmark-ingest-postgres-*-cleanup.sql
 .idea/
 .DS_Store
 Thumbs.db
+# Secretos montados o generados localmente
+secrets/
+*.token
+*.secret

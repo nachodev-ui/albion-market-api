@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nachodev-ui/albion-market-api/internal/domain"
+	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
 	"github.com/nachodev-ui/albion-market-api/internal/observability"
 )
 
@@ -41,7 +42,7 @@ func TestIngestHandlerRecordsLatencyAndOrderedSuccessLog(t *testing.T) {
 			Accepted:           1,
 			CurrentRowsTouched: 1,
 		}},
-		[]string{"secret"},
+		testAuthenticator(t, "secret"),
 		1<<20,
 		metrics,
 		observability.NewLogger(&logs, "never"),
@@ -71,6 +72,7 @@ func TestIngestHandlerRecordsLatencyAndOrderedSuccessLog(t *testing.T) {
 		"duplicate=false",
 		"status=202",
 		"duration_ms=",
+		`auth_key_id="current"`,
 	}
 	last := -1
 	for _, fragment := range ordered {
@@ -88,7 +90,7 @@ func TestIngestHandlerHidesInternalErrorFromResponse(t *testing.T) {
 	var logs bytes.Buffer
 	handler := NewIngestHandler(
 		fakeIngestService{err: errors.New("password authentication failed")},
-		[]string{"secret"},
+		testAuthenticator(t, "secret"),
 		1<<20,
 		observability.NewIngestMetrics(),
 		observability.NewLogger(&logs, "never"),
@@ -138,7 +140,7 @@ func TestIngestPricesRejectsUnsupportedContentType(t *testing.T) {
 
 	handler := NewIngestHandler(
 		fakeIngestService{},
-		[]string{"secret"},
+		testAuthenticator(t, "secret"),
 		1<<20,
 		observability.NewIngestMetrics(),
 		nil,
@@ -152,5 +154,67 @@ func TestIngestPricesRejectsUnsupportedContentType(t *testing.T) {
 
 	if response.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnsupportedMediaType)
+	}
+}
+
+func TestIngestHandlerReturnsBearerChallengeWithoutLeakingToken(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	handler := NewIngestHandler(
+		fakeIngestService{},
+		testAuthenticator(t, "valid-secret"),
+		1<<20,
+		observability.NewIngestMetrics(),
+		observability.NewLogger(&logs, "never"),
+	)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ingest/prices", strings.NewReader(validIngestBody(t)))
+	request.Header.Set("Authorization", "Bearer invalid-secret")
+	response := httptest.NewRecorder()
+
+	handler.IngestPrices(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+	if got := response.Header().Get("WWW-Authenticate"); got != `Bearer realm="ingest"` {
+		t.Fatalf("WWW-Authenticate = %q", got)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+	if strings.Contains(response.Body.String(), "invalid-secret") || strings.Contains(logs.String(), "invalid-secret") {
+		t.Fatal("provided bearer token leaked to response or logs")
+	}
+}
+
+func TestIngestHandlerRejectsPlainHTTPWhenRequired(t *testing.T) {
+	t.Parallel()
+
+	authenticator, err := ingestauth.New(
+		[]ingestauth.Credential{{ID: "current", Token: "valid-secret"}},
+		ingestauth.Options{RequireHTTPS: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewIngestHandler(
+		fakeIngestService{},
+		authenticator,
+		1<<20,
+		observability.NewIngestMetrics(),
+		nil,
+	)
+	request := httptest.NewRequest(http.MethodPost, "http://api.example.test/api/v1/ingest/prices", strings.NewReader(validIngestBody(t)))
+	request.Header.Set("Authorization", "Bearer valid-secret")
+	response := httptest.NewRecorder()
+
+	handler.IngestPrices(response, request)
+
+	if response.Code != http.StatusUpgradeRequired {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUpgradeRequired)
+	}
+	if got := response.Header().Get("Upgrade"); got != "TLS/1.2" {
+		t.Fatalf("Upgrade = %q, want TLS/1.2", got)
 	}
 }
