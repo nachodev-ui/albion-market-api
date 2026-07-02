@@ -22,6 +22,7 @@ export default defineConfig({
       { text: 'API', link: '/api/endpoints' },
       { text: 'PostgreSQL', link: '/database/' },
       { text: 'Operación', link: '/operations/' },
+      { text: 'Despliegue', link: '/deployment/' },
       { text: 'Seguridad', link: '/security/' }
     ],
     sidebar: [
@@ -59,6 +60,12 @@ export default defineConfig({
           { text: 'Visión general', link: '/operations/' },
           { text: 'Observabilidad', link: '/operations/observability' },
           { text: 'Rendimiento', link: '/operations/performance' }
+        ]
+      },
+      {
+        text: 'Despliegue',
+        items: [
+          { text: 'Contenedores seguros', link: '/deployment/' }
         ]
       },
       {

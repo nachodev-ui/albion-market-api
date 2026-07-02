@@ -1,7 +1,9 @@
 # Secretos y autenticación de ingesta
 
 La ingesta de precios e historial usa credenciales Bearer dedicadas. Las rutas
-públicas de lectura no requieren esta credencial.
+públicas de lectura no requieren esta credencial. La conexión PostgreSQL también
+puede entregarse mediante `DATABASE_URL_FILE` para evitar una URI sensible en el
+entorno del proceso.
 
 ## Controles implementados
 
@@ -50,6 +52,35 @@ INGEST_BEARER_TOKEN_FILE=
 `INGEST_BEARER_TOKEN` y `INGEST_BEARER_TOKEN_FILE` son mutuamente excluyentes.
 Lo mismo aplica a la credencial anterior.
 
+## Secretos de Docker Compose
+
+El despliegue mantenido en `deploy/compose.yaml` monta tres secretos:
+
+```text
+/run/secrets/postgres_password
+/run/secrets/database_url
+/run/secrets/ingest_token
+```
+
+La API recibe solo las rutas `DATABASE_URL_FILE` e `INGEST_BEARER_TOKEN_FILE`;
+los valores no aparecen en `docker inspect ... Config.Env`. Los secretos
+respaldados por archivos son bind mounts y conservan los permisos del host.
+
+En Linux, el inicializador protege el directorio `secrets/deployment/` con
+modo `0700` y configura sus archivos como `0444`. El directorio privado
+impide que otros usuarios del host alcancen los valores, mientras que el modo
+del archivo permite que el UID no root `65532` lo lea dentro del contenedor.
+El mount bajo `/run/secrets` permanece de solo lectura.
+
+Genera la configuración sin imprimir valores mediante:
+
+```powershell
+.\scripts\initialize-deployment.ps1
+```
+
+Los archivos producidos viven bajo `secrets/` y están excluidos de Git y del
+contexto de build Docker.
+
 ## Rotación sin interrupciones
 
 1. Conserva el token actual como `INGEST_BEARER_TOKEN_PREVIOUS` o en
@@ -79,7 +110,7 @@ TRUST_PROXY_HEADERS=true
 ```
 
 No actives `TRUST_PROXY_HEADERS` cuando los clientes puedan conectarse
- directamente a la API, porque podrían falsificar `X-Forwarded-Proto` y las
+directamente a la API, porque podrían falsificar `X-Forwarded-Proto` y las
 cabeceras de IP.
 
 ## Archivos que nunca deben publicarse

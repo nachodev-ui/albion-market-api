@@ -32,6 +32,15 @@ npm run contracts:check
 Consulta [Pruebas de contratos](./contracts.md) para el lint OpenAPI y las
 comparaciones automáticas con Go.
 
+## Despliegue con contenedores
+
+```powershell
+.\scripts\test-container.ps1
+.\scripts\test-deployment-compose.ps1
+```
+
+La primera prueba valida directamente la imagen. La segunda valida el modelo Compose completo: imágenes fijadas por digest, secretos montados, migraciones obligatorias, runtime endurecido, `/healthz` y apagado por `SIGTERM`. Consulta [Despliegue reproducible y seguro](../deployment/).
+
 ## Documentación
 
 ```powershell

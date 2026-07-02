@@ -8,7 +8,8 @@ La API carga primero las variables del proceso. En desarrollo puede completar va
 |---|---:|---|
 | `APP_ENV` | `development` | Entorno de ejecución |
 | `HTTP_ADDR` | `:8080` | Dirección HTTP |
-| `DATABASE_URL` | obligatorio | URI PostgreSQL |
+| `DATABASE_URL` | obligatorio* | URI PostgreSQL como variable |
+| `DATABASE_URL_FILE` | obligatorio* | Archivo que contiene la URI PostgreSQL |
 | `LOAD_DOTENV` | `true` fuera de producción | Carga de archivos dotenv |
 | `READ_HEADER_TIMEOUT` | `2s` | Límite para cabeceras |
 | `READ_TIMEOUT` | `5s` | Límite de lectura |
@@ -31,7 +32,9 @@ La API carga primero las variables del proceso. En desarrollo puede completar va
 | `MAX_INGEST_BODY_BYTES` | Límite comprimido y descomprimido |
 | `MAX_PUBLIC_BODY_BYTES` | Límite de consultas públicas POST |
 
-No configures simultáneamente el valor y el archivo de una misma credencial. Consulta [secretos y autenticación](../security/secrets.md).
+`DATABASE_URL` y `DATABASE_URL_FILE` son mutuamente excluyentes; uno de los dos es obligatorio. La misma regla se aplica a cada par de token de ingesta. Consulta [secretos y autenticación](../security/secrets.md).
+
+Los archivos gestionados por Docker Compose bajo `/run/secrets` se aceptan como secretos montados de solo lectura. Los archivos de producción ubicados fuera de ese directorio deben usar permisos `0600` o más restrictivos en Linux.
 
 ## CORS, proxy y rate limiting
 

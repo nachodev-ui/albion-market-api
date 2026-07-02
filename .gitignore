@@ -49,3 +49,5 @@ secrets/
 node_modules/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+# Configuración local de Docker Compose
+/deploy/compose.env.local
