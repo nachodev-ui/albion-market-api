@@ -151,3 +151,50 @@ go build ./cmd/api
 ```
 
 El CI ejecuta además los tests con el detector de carreras para validar los contadores concurrentes.
+
+## Observabilidad del historial central
+
+La ingesta histórica usa contadores separados para evitar que un flujo sano de
+precios actuales oculte fallos del historial.
+
+Eventos:
+
+```text
+ingest.history_completed
+ingest.history_duplicate
+ingest.history_rejected
+ingest.history_failed
+```
+
+Orden de campos:
+
+```text
+request_id server entries buckets accepted_entries accepted_buckets history_rows_touched duplicate status duration_ms
+```
+
+`GET /api/v1/status` agrega:
+
+```json
+{
+  "history_ingest": {
+    "requests_total": 12,
+    "in_flight": 0,
+    "succeeded_total": 11,
+    "duplicates_total": 1,
+    "errors_total": 1,
+    "accepted_entries_total": 120,
+    "accepted_buckets_total": 8160,
+    "history_rows_touched_total": 7900,
+    "average_duration_ms": 82.5,
+    "last_duration_ms": 71.3,
+    "max_duration_ms": 240.1,
+    "last_request_at": "2026-06-26T21:00:00Z",
+    "last_success_at": "2026-06-26T21:00:00Z",
+    "last_error_at": "2026-06-26T20:30:00Z",
+    "last_error_kind": "request_payload_conflict"
+  }
+}
+```
+
+Los duplicados incrementan `duplicates_total`, pero no vuelven a sumar
+entradas, buckets ni filas tocadas.

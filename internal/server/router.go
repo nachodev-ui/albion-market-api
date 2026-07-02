@@ -10,6 +10,7 @@ func NewRouter(
 	healthHandler *handlers.HealthHandler,
 	ingestHandler *handlers.IngestHandler,
 	pricesHandler *handlers.PricesHandler,
+	historyHandler *handlers.HistoryHandler,
 	statusHandler *handlers.StatusHandler,
 	security SecurityOptions,
 ) http.Handler {
@@ -17,7 +18,12 @@ func NewRouter(
 
 	mux.HandleFunc("/healthz", healthHandler.Healthz)
 	mux.HandleFunc("/api/v1/ingest/prices", ingestHandler.IngestPrices)
+	mux.HandleFunc("/api/v1/ingest/history", ingestHandler.IngestHistory)
+	mux.HandleFunc("/api/v1/markets", pricesHandler.ListMarkets)
+	mux.HandleFunc("/api/v1/prices", pricesHandler.GetCurrentPrices)
 	mux.HandleFunc("/api/v1/prices/query", pricesHandler.QueryCurrentPrices)
+	mux.HandleFunc("/api/v1/history", historyHandler.GetMarketHistory)
+	mux.HandleFunc("/api/v1/history/query", historyHandler.QueryMarketHistory)
 	mux.HandleFunc("/api/v1/status", statusHandler.Status)
 
 	var handler http.Handler = mux

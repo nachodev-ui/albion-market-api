@@ -58,6 +58,7 @@ func main() {
 	repo := repository.NewMarketRepository(dbpool)
 	svc := service.NewMarketService(repo)
 	ingestMetrics := observability.NewIngestMetrics()
+	historyIngestMetrics := observability.NewHistoryIngestMetrics()
 	databaseMonitor := observability.NewPgxDatabaseMonitor(dbpool)
 
 	healthHandler := handlers.NewHealthHandler(svc)
@@ -67,20 +68,24 @@ func main() {
 		cfg.MaxIngestBodyBytes,
 		ingestMetrics,
 		logger,
+		historyIngestMetrics,
 	)
 	pricesHandler := handlers.NewPricesHandler(svc, cfg.MaxPublicBodyBytes)
+	historyHandler := handlers.NewHistoryHandler(svc, cfg.MaxPublicBodyBytes)
 	statusHandler := handlers.NewStatusHandler(
 		serviceName,
 		cfg.AppEnv,
 		startedAt,
 		databaseMonitor,
 		ingestMetrics,
+		historyIngestMetrics,
 	)
 
 	router := server.NewRouter(
 		healthHandler,
 		ingestHandler,
 		pricesHandler,
+		historyHandler,
 		statusHandler,
 		server.SecurityOptions{
 			AllowedOrigins: cfg.CORSAllowedOrigins,
@@ -112,6 +117,12 @@ func main() {
 			observability.F("environment", cfg.AppEnv),
 			observability.F("health", "/healthz"),
 			observability.F("status", "/api/v1/status"),
+			observability.F("markets", "/api/v1/markets"),
+			observability.F("prices", "/api/v1/prices"),
+			observability.F("prices_query", "/api/v1/prices/query"),
+			observability.F("history", "/api/v1/history"),
+			observability.F("history_query", "/api/v1/history/query"),
+			observability.F("history_ingest", "/api/v1/ingest/history"),
 			observability.F("cors_origins", len(cfg.CORSAllowedOrigins)),
 			observability.F("rate_limit_enabled", cfg.RateLimitEnabled),
 			observability.F("trust_proxy_headers", cfg.TrustProxyHeaders),

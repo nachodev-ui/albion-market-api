@@ -62,7 +62,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	maxPublicBodyBytes, err := int64Env("MAX_PUBLIC_BODY_BYTES", 64<<10)
+	maxPublicBodyBytes, err := int64Env("MAX_PUBLIC_BODY_BYTES", 1<<20)
 	if err != nil {
 		return Config{}, err
 	}
@@ -146,7 +146,6 @@ func durationEnv(key string, fallback time.Duration) (time.Duration, error) {
 	if value == "" {
 		return fallback, nil
 	}
-
 	parsed, err := time.ParseDuration(value)
 	if err != nil || parsed <= 0 {
 		return 0, fmt.Errorf("%s must be a positive duration", key)
@@ -159,7 +158,6 @@ func int64Env(key string, fallback int64) (int64, error) {
 	if value == "" {
 		return fallback, nil
 	}
-
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || parsed <= 0 {
 		return 0, fmt.Errorf("%s must be a positive integer", key)
@@ -180,7 +178,6 @@ func float64Env(key string, fallback float64) (float64, error) {
 	if value == "" {
 		return fallback, nil
 	}
-
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil || parsed <= 0 {
 		return 0, fmt.Errorf("%s must be a positive number", key)
@@ -193,7 +190,6 @@ func boolEnv(key string, fallback bool) (bool, error) {
 	if value == "" {
 		return fallback, nil
 	}
-
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return false, fmt.Errorf("%s must be true or false", key)
@@ -206,7 +202,6 @@ func csvEnv(key string, fallback []string) []string {
 	if !exists {
 		return append([]string(nil), fallback...)
 	}
-
 	seen := make(map[string]struct{})
 	result := make([]string, 0)
 	for _, raw := range strings.Split(value, ",") {

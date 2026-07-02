@@ -25,6 +25,7 @@ func TestStatusHandlerReportsDatabaseAndIngestMetrics(t *testing.T) {
 
 	startedAt := time.Now().UTC().Add(-time.Minute)
 	metrics := observability.NewIngestMetrics()
+	historyMetrics := observability.NewHistoryIngestMetrics()
 	metrics.RequestStarted(startedAt.Add(10 * time.Second))
 	metrics.RequestFinished(observability.IngestObservation{
 		CompletedAt:        startedAt.Add(11 * time.Second),
@@ -32,6 +33,15 @@ func TestStatusHandlerReportsDatabaseAndIngestMetrics(t *testing.T) {
 		StatusCode:         http.StatusAccepted,
 		Accepted:           500,
 		CurrentRowsTouched: 400,
+	})
+	historyMetrics.RequestStarted(startedAt.Add(20 * time.Second))
+	historyMetrics.RequestFinished(observability.HistoryIngestObservation{
+		CompletedAt:        startedAt.Add(21 * time.Second),
+		Duration:           50 * time.Millisecond,
+		StatusCode:         http.StatusAccepted,
+		AcceptedEntries:    2,
+		AcceptedBuckets:    68,
+		HistoryRowsTouched: 60,
 	})
 
 	handler := NewStatusHandler(
@@ -50,6 +60,7 @@ func TestStatusHandlerReportsDatabaseAndIngestMetrics(t *testing.T) {
 			},
 		}},
 		metrics,
+		historyMetrics,
 	)
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
@@ -75,6 +86,10 @@ func TestStatusHandlerReportsDatabaseAndIngestMetrics(t *testing.T) {
 	}
 	if body.Ingest.CurrentRowsTouchedTotal != 400 {
 		t.Fatalf("current rows touched = %d, want 400", body.Ingest.CurrentRowsTouchedTotal)
+	}
+	if body.HistoryIngest.RequestsTotal != 1 || body.HistoryIngest.AcceptedEntriesTotal != 2 ||
+		body.HistoryIngest.AcceptedBucketsTotal != 68 || body.HistoryIngest.HistoryRowsTouchedTotal != 60 {
+		t.Fatalf("history ingest = %#v", body.HistoryIngest)
 	}
 }
 

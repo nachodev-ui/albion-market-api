@@ -20,7 +20,13 @@ func (r healthRepository) Ping(context.Context) error { return r.pingErr }
 func (healthRepository) IngestPrices(context.Context, domain.IngestPricesRequest) (domain.IngestPricesResult, error) {
 	return domain.IngestPricesResult{}, nil
 }
-func (healthRepository) QueryCurrentPrices(context.Context, domain.PriceQueryRequest) ([]domain.CurrentPrice, error) {
+func (healthRepository) IngestHistory(context.Context, domain.IngestHistoryRequest) (domain.IngestHistoryResult, error) {
+	return domain.IngestHistoryResult{}, nil
+}
+func (healthRepository) QueryCurrentPrices(context.Context, domain.CurrentPriceLookup) ([]domain.CurrentPrice, error) {
+	return nil, nil
+}
+func (healthRepository) QueryMarketHistory(context.Context, domain.MarketHistoryLookup) ([]domain.MarketHistorySeries, error) {
 	return nil, nil
 }
 

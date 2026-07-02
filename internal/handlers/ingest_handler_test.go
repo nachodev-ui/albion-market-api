@@ -16,12 +16,18 @@ import (
 )
 
 type fakeIngestService struct {
-	response domain.IngestPricesResponse
-	err      error
+	response        domain.IngestPricesResponse
+	err             error
+	historyResponse domain.IngestHistoryResponse
+	historyErr      error
 }
 
 func (f fakeIngestService) IngestPrices(context.Context, domain.IngestPricesRequest) (domain.IngestPricesResponse, error) {
 	return f.response, f.err
+}
+
+func (f fakeIngestService) IngestHistory(context.Context, domain.IngestHistoryRequest) (domain.IngestHistoryResponse, error) {
+	return f.historyResponse, f.historyErr
 }
 
 func TestIngestHandlerRecordsLatencyAndOrderedSuccessLog(t *testing.T) {
@@ -125,4 +131,26 @@ func validIngestBody(t *testing.T) string {
 		t.Fatalf("marshal body: %v", err)
 	}
 	return string(body)
+}
+
+func TestIngestPricesRejectsUnsupportedContentType(t *testing.T) {
+	t.Parallel()
+
+	handler := NewIngestHandler(
+		fakeIngestService{},
+		[]string{"secret"},
+		1<<20,
+		observability.NewIngestMetrics(),
+		nil,
+	)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ingest/prices", strings.NewReader(validIngestBody(t)))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "text/plain")
+	response := httptest.NewRecorder()
+
+	handler.IngestPrices(response, request)
+
+	if response.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnsupportedMediaType)
+	}
 }

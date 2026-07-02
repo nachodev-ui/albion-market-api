@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +20,13 @@ func (routerRepository) Ping(context.Context) error { return nil }
 func (routerRepository) IngestPrices(context.Context, domain.IngestPricesRequest) (domain.IngestPricesResult, error) {
 	return domain.IngestPricesResult{}, nil
 }
-func (routerRepository) QueryCurrentPrices(context.Context, domain.PriceQueryRequest) ([]domain.CurrentPrice, error) {
+func (routerRepository) IngestHistory(context.Context, domain.IngestHistoryRequest) (domain.IngestHistoryResult, error) {
+	return domain.IngestHistoryResult{}, nil
+}
+func (routerRepository) QueryMarketHistory(context.Context, domain.MarketHistoryLookup) ([]domain.MarketHistorySeries, error) {
+	return []domain.MarketHistorySeries{}, nil
+}
+func (routerRepository) QueryCurrentPrices(context.Context, domain.CurrentPriceLookup) ([]domain.CurrentPrice, error) {
 	return []domain.CurrentPrice{}, nil
 }
 
@@ -29,25 +36,128 @@ func (routerDatabaseMonitor) Snapshot(context.Context) observability.DatabaseSna
 	return observability.DatabaseSnapshot{Healthy: true}
 }
 
+func newTestRouter() http.Handler {
+	marketService := service.NewMarketService(routerRepository{})
+	metrics := observability.NewIngestMetrics()
+	historyMetrics := observability.NewHistoryIngestMetrics()
+
+	return NewRouter(
+		handlers.NewHealthHandler(marketService),
+		handlers.NewIngestHandler(marketService, []string{"secret"}, 1<<20, metrics, nil, historyMetrics),
+		handlers.NewPricesHandler(marketService, 1<<20),
+		handlers.NewHistoryHandler(marketService, 1<<20),
+		handlers.NewStatusHandler("albion-market-api", "test", time.Now(), routerDatabaseMonitor{}, metrics, historyMetrics),
+		SecurityOptions{AllowedOrigins: []string{"http://localhost:5173"}},
+	)
+}
+
 func TestRouterExposesStatusEndpoint(t *testing.T) {
 	t.Parallel()
 
-	marketService := service.NewMarketService(routerRepository{})
-	metrics := observability.NewIngestMetrics()
-
-	router := NewRouter(
-		handlers.NewHealthHandler(marketService),
-		handlers.NewIngestHandler(marketService, []string{"secret"}, 1<<20, metrics, nil),
-		handlers.NewPricesHandler(marketService, 1<<20),
-		handlers.NewStatusHandler("albion-market-api", "test", time.Now(), routerDatabaseMonitor{}, metrics),
-		SecurityOptions{},
-	)
-
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
+	newTestRouter().ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+}
+
+func TestRouterExposesFrontendReadEndpoints(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{
+			name:   "market catalog",
+			method: http.MethodGet,
+			path:   "/api/v1/markets",
+		},
+		{
+			name:   "simple prices",
+			method: http.MethodGet,
+			path:   "/api/v1/prices?server=west&itemIds=T4_BAG&marketKey=martlock&quality=1",
+		},
+		{
+			name:   "batch prices",
+			method: http.MethodPost,
+			path:   "/api/v1/prices/query",
+			body:   `{"server":"west","marketKeys":["martlock"],"entries":[{"itemIdentifier":"T4_BAG","quality":1}]}`,
+		},
+		{
+			name:   "simple history",
+			method: http.MethodGet,
+			path:   "/api/v1/history?server=west&itemId=T4_BAG&marketKey=martlock&quality=1&period=4-weeks&limit=1",
+		},
+		{
+			name:   "batch history",
+			method: http.MethodPost,
+			path:   "/api/v1/history/query",
+			body:   `{"server":"west","marketKeys":["martlock"],"entries":[{"itemIdentifier":"T4_BAG","quality":1}],"rangeStart":"2026-06-01","rangeEnd":"2026-06-25"}`,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+			response := httptest.NewRecorder()
+			newTestRouter().ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestRouterAllowsFrontendPreflight(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodOptions, "/api/v1/prices/query", nil)
+	request.Header.Set("Origin", "http://localhost:5173")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	response := httptest.NewRecorder()
+	newTestRouter().ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status code = %d, want %d", response.Code, http.StatusNoContent)
+	}
+	if response.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5173" {
+		t.Fatalf("missing CORS header: %#v", response.Header())
+	}
+}
+
+func TestRouterExposesAuthenticatedHistoryIngestEndpoint(t *testing.T) {
+	t.Parallel()
+
+	body := `{
+		"request_id":"00112233-4455-6677-8899-aabbccddeeff",
+		"server":"west",
+		"entries":[{
+			"observed_at":"2026-06-26T12:00:00Z",
+			"location_id":4002,
+			"item_key":"T4_BAG",
+			"quality":1,
+			"history":[{
+				"timestamp":"2026-06-25T00:00:00Z",
+				"item_count":12,
+				"average_unit_price":4500
+			}]
+		}]
+	}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ingest/history", strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer secret")
+	response := httptest.NewRecorder()
+	newTestRouter().ServeHTTP(response, request)
+
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusAccepted, response.Body.String())
 	}
 }
