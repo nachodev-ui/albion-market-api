@@ -132,3 +132,25 @@ func validIngestBody(t *testing.T) string {
 	}
 	return string(body)
 }
+
+func TestIngestPricesRejectsUnsupportedContentType(t *testing.T) {
+	t.Parallel()
+
+	handler := NewIngestHandler(
+		fakeIngestService{},
+		[]string{"secret"},
+		1<<20,
+		observability.NewIngestMetrics(),
+		nil,
+	)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ingest/prices", strings.NewReader(validIngestBody(t)))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "text/plain")
+	response := httptest.NewRecorder()
+
+	handler.IngestPrices(response, request)
+
+	if response.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnsupportedMediaType)
+	}
+}

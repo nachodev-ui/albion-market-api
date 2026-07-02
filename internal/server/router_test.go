@@ -44,9 +44,10 @@ func newTestRouter() http.Handler {
 	return NewRouter(
 		handlers.NewHealthHandler(marketService),
 		handlers.NewIngestHandler(marketService, []string{"secret"}, 1<<20, metrics, nil, historyMetrics),
-		handlers.NewPricesHandler(marketService),
-		handlers.NewHistoryHandler(marketService),
+		handlers.NewPricesHandler(marketService, 1<<20),
+		handlers.NewHistoryHandler(marketService, 1<<20),
 		handlers.NewStatusHandler("albion-market-api", "test", time.Now(), routerDatabaseMonitor{}, metrics, historyMetrics),
+		SecurityOptions{AllowedOrigins: []string{"http://localhost:5173"}},
 	)
 }
 
@@ -120,13 +121,15 @@ func TestRouterAllowsFrontendPreflight(t *testing.T) {
 	t.Parallel()
 
 	request := httptest.NewRequest(http.MethodOptions, "/api/v1/prices/query", nil)
+	request.Header.Set("Origin", "http://localhost:5173")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	response := httptest.NewRecorder()
 	newTestRouter().ServeHTTP(response, request)
 
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("status code = %d, want %d", response.Code, http.StatusNoContent)
 	}
-	if response.Header().Get("Access-Control-Allow-Origin") != "*" {
+	if response.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5173" {
 		t.Fatalf("missing CORS header: %#v", response.Header())
 	}
 }

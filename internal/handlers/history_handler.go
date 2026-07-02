@@ -14,21 +14,25 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/service"
 )
 
-const maxHistoryQueryBodyBytes = 1 << 20
-
 type historyService interface {
 	QueryMarketHistory(context.Context, domain.HistoryQueryRequest) (domain.HistoryQueryResponse, error)
 }
 
 type HistoryHandler struct {
-	service historyService
-	now     func() time.Time
+	service            historyService
+	now                func() time.Time
+	maxRequestBodySize int64
 }
 
-func NewHistoryHandler(service historyService) *HistoryHandler {
+func NewHistoryHandler(service historyService, bodyLimits ...int64) *HistoryHandler {
+	maxRequestBodySize := defaultPublicQueryBodyBytes
+	if len(bodyLimits) > 0 && bodyLimits[0] > 0 {
+		maxRequestBodySize = bodyLimits[0]
+	}
 	return &HistoryHandler{
-		service: service,
-		now:     time.Now,
+		service:            service,
+		now:                time.Now,
+		maxRequestBodySize: maxRequestBodySize,
 	}
 }
 
@@ -37,6 +41,7 @@ func NewHistoryHandler(service historyService) *HistoryHandler {
 // other callers that need several item/market combinations.
 func (h *HistoryHandler) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 		return
 	}
@@ -81,12 +86,17 @@ func (h *HistoryHandler) GetMarketHistory(w http.ResponseWriter, r *http.Request
 
 func (h *HistoryHandler) QueryMarketHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+		return
+	}
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]any{"error": "content type must be application/json"})
 		return
 	}
 	defer r.Body.Close()
 
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxHistoryQueryBodyBytes))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, h.maxRequestBodySize))
 	decoder.DisallowUnknownFields()
 
 	var req domain.HistoryQueryRequest

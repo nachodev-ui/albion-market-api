@@ -70,8 +70,8 @@ func main() {
 		logger,
 		historyIngestMetrics,
 	)
-	pricesHandler := handlers.NewPricesHandler(svc)
-	historyHandler := handlers.NewHistoryHandler(svc)
+	pricesHandler := handlers.NewPricesHandler(svc, cfg.MaxPublicBodyBytes)
+	historyHandler := handlers.NewHistoryHandler(svc, cfg.MaxPublicBodyBytes)
 	statusHandler := handlers.NewStatusHandler(
 		serviceName,
 		cfg.AppEnv,
@@ -87,14 +87,26 @@ func main() {
 		pricesHandler,
 		historyHandler,
 		statusHandler,
+		server.SecurityOptions{
+			AllowedOrigins: cfg.CORSAllowedOrigins,
+			RateLimit: server.RateLimitOptions{
+				Enabled:           cfg.RateLimitEnabled,
+				RequestsPerSecond: cfg.RateLimitRequestsPerSec,
+				Burst:             cfg.RateLimitBurst,
+				ClientTTL:         cfg.RateLimitClientTTL,
+				TrustProxyHeaders: cfg.TrustProxyHeaders,
+			},
+		},
 	)
 
 	srv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      router,
-		ReadTimeout:  cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout,
-		IdleTimeout:  cfg.IdleTimeout,
+		Addr:              cfg.HTTPAddr,
+		Handler:           router,
+		ReadTimeout:       cfg.ReadTimeout,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
+		MaxHeaderBytes:    cfg.MaxHeaderBytes,
 	}
 
 	serverErrors := make(chan error, 1)
@@ -111,6 +123,9 @@ func main() {
 			observability.F("history", "/api/v1/history"),
 			observability.F("history_query", "/api/v1/history/query"),
 			observability.F("history_ingest", "/api/v1/ingest/history"),
+			observability.F("cors_origins", len(cfg.CORSAllowedOrigins)),
+			observability.F("rate_limit_enabled", cfg.RateLimitEnabled),
+			observability.F("trust_proxy_headers", cfg.TrustProxyHeaders),
 			observability.F("color", cfg.LogColor),
 		)
 		serverErrors <- srv.ListenAndServe()

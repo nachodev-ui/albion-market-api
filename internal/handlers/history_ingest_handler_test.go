@@ -196,3 +196,26 @@ func validHistoryIngestBody(t *testing.T) string {
 	}
 	return string(body)
 }
+
+func TestIngestHistoryRejectsUnsupportedContentType(t *testing.T) {
+	t.Parallel()
+
+	handler := NewIngestHandler(
+		fakeIngestService{},
+		[]string{"secret"},
+		1<<20,
+		observability.NewIngestMetrics(),
+		nil,
+		observability.NewHistoryIngestMetrics(),
+	)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ingest/history", strings.NewReader(validHistoryIngestBody(t)))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "text/plain")
+	response := httptest.NewRecorder()
+
+	handler.IngestHistory(response, request)
+
+	if response.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnsupportedMediaType)
+	}
+}

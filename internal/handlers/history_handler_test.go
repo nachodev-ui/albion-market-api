@@ -193,3 +193,33 @@ func TestHistoryHandlerMapsValidationAndHidesInternalErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryMarketHistoryRejectsUnsupportedContentType(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHistoryHandler(&fakeHistoryService{}, 1024)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/history/query", strings.NewReader(`{"server":"west"}`))
+	request.Header.Set("Content-Type", "text/plain")
+	response := httptest.NewRecorder()
+
+	handler.QueryMarketHistory(response, request)
+
+	if response.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnsupportedMediaType)
+	}
+}
+
+func TestQueryMarketHistoryUsesConfiguredBodyLimit(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHistoryHandler(&fakeHistoryService{}, 8)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/history/query", strings.NewReader(`{"server":"west"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler.QueryMarketHistory(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusRequestEntityTooLarge, response.Body.String())
+	}
+}

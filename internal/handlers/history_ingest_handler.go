@@ -58,6 +58,7 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
 		statusCode = http.StatusMethodNotAllowed
 		errorKind = "method_not_allowed"
 		errorDetail = "method not allowed"
@@ -69,6 +70,13 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusUnauthorized
 		errorKind = "unauthorized"
 		errorDetail = "unauthorized"
+		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
+		return
+	}
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		statusCode = http.StatusUnsupportedMediaType
+		errorKind = "unsupported_content_type"
+		errorDetail = "content type must be application/json"
 		writeJSON(w, statusCode, ingestErrorResponse{Error: errorDetail})
 		return
 	}

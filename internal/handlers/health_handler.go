@@ -16,22 +16,22 @@ func NewHealthHandler(service *service.MarketService) *HealthHandler {
 }
 
 func (h *HealthHandler) Healthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		w.Header().Set("Allow", http.MethodGet)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
 
 	if err := h.service.Ping(r.Context()); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"status": "error",
-			"error":  err.Error(),
+			"error":  "service unavailable",
 		})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,7 +13,7 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/service"
 )
 
-const maxPriceQueryBodyBytes = 1 << 20
+const defaultPublicQueryBodyBytes int64 = 1 << 20
 
 type pricesService interface {
 	Markets(includeDisabled bool) domain.MarketCatalogResponse
@@ -20,15 +21,21 @@ type pricesService interface {
 }
 
 type PricesHandler struct {
-	service pricesService
+	service            pricesService
+	maxRequestBodySize int64
 }
 
-func NewPricesHandler(service pricesService) *PricesHandler {
-	return &PricesHandler{service: service}
+func NewPricesHandler(service pricesService, bodyLimits ...int64) *PricesHandler {
+	maxRequestBodySize := defaultPublicQueryBodyBytes
+	if len(bodyLimits) > 0 && bodyLimits[0] > 0 {
+		maxRequestBodySize = bodyLimits[0]
+	}
+	return &PricesHandler{service: service, maxRequestBodySize: maxRequestBodySize}
 }
 
 func (h *PricesHandler) ListMarkets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 		return
 	}
@@ -53,6 +60,7 @@ func (h *PricesHandler) ListMarkets(w http.ResponseWriter, r *http.Request) {
 // markets or mixed qualities.
 func (h *PricesHandler) GetCurrentPrices(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 		return
 	}
@@ -84,12 +92,17 @@ func (h *PricesHandler) GetCurrentPrices(w http.ResponseWriter, r *http.Request)
 
 func (h *PricesHandler) QueryCurrentPrices(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+		return
+	}
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]any{"error": "content type must be application/json"})
 		return
 	}
 	defer r.Body.Close()
 
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPriceQueryBodyBytes))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, h.maxRequestBodySize))
 	decoder.DisallowUnknownFields()
 
 	var req domain.PriceQueryRequest
@@ -127,6 +140,15 @@ func (h *PricesHandler) query(w http.ResponseWriter, r *http.Request, req domain
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func isJSONContentType(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return true
+	}
+	mediaType, _, err := mime.ParseMediaType(value)
+	return err == nil && mediaType == "application/json"
 }
 
 func splitCommaSeparated(value string) []string {
