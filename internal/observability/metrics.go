@@ -54,9 +54,16 @@ type httpDurationKey struct {
 	Route  string
 }
 
+type httpErrorKey struct {
+	Method string
+	Route  string
+	Class  string
+}
+
 type HTTPMetricsSnapshot struct {
 	InFlight  int64
 	Requests  map[httpRequestKey]uint64
+	Errors    map[httpErrorKey]uint64
 	Durations map[httpDurationKey]durationHistogram
 }
 
@@ -65,12 +72,14 @@ type HTTPMetrics struct {
 
 	inFlight  int64
 	requests  map[httpRequestKey]uint64
+	errors    map[httpErrorKey]uint64
 	durations map[httpDurationKey]durationHistogram
 }
 
 func NewHTTPMetrics() *HTTPMetrics {
 	return &HTTPMetrics{
 		requests:  make(map[httpRequestKey]uint64),
+		errors:    make(map[httpErrorKey]uint64),
 		durations: make(map[httpDurationKey]durationHistogram),
 	}
 }
@@ -99,6 +108,10 @@ func (m *HTTPMetrics) RequestFinished(method, route string, status int, duration
 		m.inFlight--
 	}
 	m.requests[httpRequestKey{Method: method, Route: route, Status: statusLabel}]++
+	if status >= 400 && status <= 599 {
+		statusClass := strconv.Itoa(status/100) + "xx"
+		m.errors[httpErrorKey{Method: method, Route: route, Class: statusClass}]++
+	}
 	key := httpDurationKey{Method: method, Route: route}
 	histogram := m.durations[key]
 	histogram.observe(duration)
@@ -109,6 +122,7 @@ func (m *HTTPMetrics) Snapshot() HTTPMetricsSnapshot {
 	if m == nil {
 		return HTTPMetricsSnapshot{
 			Requests:  map[httpRequestKey]uint64{},
+			Errors:    map[httpErrorKey]uint64{},
 			Durations: map[httpDurationKey]durationHistogram{},
 		}
 	}
@@ -119,6 +133,10 @@ func (m *HTTPMetrics) Snapshot() HTTPMetricsSnapshot {
 	for key, value := range m.requests {
 		requests[key] = value
 	}
+	errors := make(map[httpErrorKey]uint64, len(m.errors))
+	for key, value := range m.errors {
+		errors[key] = value
+	}
 	durations := make(map[httpDurationKey]durationHistogram, len(m.durations))
 	for key, value := range m.durations {
 		durations[key] = value
@@ -126,6 +144,7 @@ func (m *HTTPMetrics) Snapshot() HTTPMetricsSnapshot {
 	return HTTPMetricsSnapshot{
 		InFlight:  m.inFlight,
 		Requests:  requests,
+		Errors:    errors,
 		Durations: durations,
 	}
 }
@@ -158,7 +177,7 @@ func (m *DatabaseMetrics) Observe(operation string, duration time.Duration, err 
 	if m == nil {
 		return
 	}
-	operation = normalizeMetricLabel(operation, "unknown")
+	operation = normalizeDatabaseOperation(operation)
 	result := "success"
 	if err != nil {
 		result = "error"
@@ -194,29 +213,35 @@ func (m *DatabaseMetrics) Snapshot() DatabaseMetricsSnapshot {
 }
 
 type PrometheusExporterOptions struct {
-	Service       string
-	Environment   string
-	Version       string
-	Revision      string
-	StartedAt     time.Time
-	HTTP          *HTTPMetrics
-	Database      *DatabaseMetrics
-	DatabasePool  DatabaseMonitor
-	Ingest        *IngestMetrics
-	HistoryIngest *HistoryIngestMetrics
+	Service          string
+	Environment      string
+	Version          string
+	Revision         string
+	StartedAt        time.Time
+	HTTP             *HTTPMetrics
+	Database         *DatabaseMetrics
+	DatabasePool     DatabaseMonitor
+	Ingest           *IngestMetrics
+	HistoryIngest    *HistoryIngestMetrics
+	Readiness        *ReadinessMetrics
+	ReadinessChecker ReadinessChecker
+	ReadinessTimeout time.Duration
 }
 
 type PrometheusExporter struct {
-	service       string
-	environment   string
-	version       string
-	revision      string
-	startedAt     time.Time
-	http          *HTTPMetrics
-	database      *DatabaseMetrics
-	databasePool  DatabaseMonitor
-	ingest        *IngestMetrics
-	historyIngest *HistoryIngestMetrics
+	service          string
+	environment      string
+	version          string
+	revision         string
+	startedAt        time.Time
+	http             *HTTPMetrics
+	database         *DatabaseMetrics
+	databasePool     DatabaseMonitor
+	ingest           *IngestMetrics
+	historyIngest    *HistoryIngestMetrics
+	readiness        *ReadinessMetrics
+	readinessChecker ReadinessChecker
+	readinessTimeout time.Duration
 }
 
 func NewPrometheusExporter(options PrometheusExporterOptions) *PrometheusExporter {
@@ -224,17 +249,24 @@ func NewPrometheusExporter(options PrometheusExporterOptions) *PrometheusExporte
 	if startedAt.IsZero() {
 		startedAt = time.Now().UTC()
 	}
+	readinessTimeout := options.ReadinessTimeout
+	if readinessTimeout <= 0 {
+		readinessTimeout = time.Second
+	}
 	return &PrometheusExporter{
-		service:       normalizeMetricLabel(options.Service, "albion-market-api"),
-		environment:   normalizeMetricLabel(options.Environment, "unknown"),
-		version:       normalizeMetricLabel(options.Version, "dev"),
-		revision:      normalizeMetricLabel(options.Revision, "unknown"),
-		startedAt:     startedAt,
-		http:          options.HTTP,
-		database:      options.Database,
-		databasePool:  options.DatabasePool,
-		ingest:        options.Ingest,
-		historyIngest: options.HistoryIngest,
+		service:          normalizeMetricLabel(options.Service, "albion-market-api"),
+		environment:      normalizeMetricLabel(options.Environment, "unknown"),
+		version:          normalizeMetricLabel(options.Version, "dev"),
+		revision:         normalizeMetricLabel(options.Revision, "unknown"),
+		startedAt:        startedAt,
+		http:             options.HTTP,
+		database:         options.Database,
+		databasePool:     options.DatabasePool,
+		ingest:           options.Ingest,
+		historyIngest:    options.HistoryIngest,
+		readiness:        options.Readiness,
+		readinessChecker: options.ReadinessChecker,
+		readinessTimeout: readinessTimeout,
 	}
 }
 
@@ -271,6 +303,8 @@ func (e *PrometheusExporter) Write(ctx context.Context, writer io.Writer) error 
 	writeMetric(writer, "albion_market_api_go_gc_cycles_total", nil, float64(memory.NumGC))
 
 	e.writeHTTP(writer)
+	e.refreshReadiness(ctx)
+	e.writeReadiness(writer)
 	e.writeDatabase(ctx, writer)
 	if e.ingest != nil || e.historyIngest != nil {
 		writeIngestMetricDescriptions(writer)
@@ -307,6 +341,28 @@ func (e *PrometheusExporter) writeHTTP(writer io.Writer) {
 		}, float64(snapshot.Requests[key]))
 	}
 
+	writeHelpType(writer, "albion_market_api_http_errors_total", "HTTP 4xx and 5xx responses by method, route and status class.", "counter")
+	errorKeys := make([]httpErrorKey, 0, len(snapshot.Errors))
+	for key := range snapshot.Errors {
+		errorKeys = append(errorKeys, key)
+	}
+	sort.Slice(errorKeys, func(i, j int) bool {
+		if errorKeys[i].Route != errorKeys[j].Route {
+			return errorKeys[i].Route < errorKeys[j].Route
+		}
+		if errorKeys[i].Method != errorKeys[j].Method {
+			return errorKeys[i].Method < errorKeys[j].Method
+		}
+		return errorKeys[i].Class < errorKeys[j].Class
+	})
+	for _, key := range errorKeys {
+		writeMetric(writer, "albion_market_api_http_errors_total", map[string]string{
+			"class":  key.Class,
+			"method": key.Method,
+			"route":  key.Route,
+		}, float64(snapshot.Errors[key]))
+	}
+
 	writeHelpType(writer, "albion_market_api_http_request_duration_seconds", "HTTP request duration in seconds.", "histogram")
 	durationKeys := make([]httpDurationKey, 0, len(snapshot.Durations))
 	for key := range snapshot.Durations {
@@ -326,6 +382,45 @@ func (e *PrometheusExporter) writeHTTP(writer io.Writer) {
 	}
 }
 
+func (e *PrometheusExporter) refreshReadiness(ctx context.Context) {
+	if e.readinessChecker == nil {
+		return
+	}
+	readinessCtx, cancel := context.WithTimeout(ctx, e.readinessTimeout)
+	defer cancel()
+	_ = e.readinessChecker.Check(readinessCtx)
+}
+
+func (e *PrometheusExporter) writeReadiness(writer io.Writer) {
+	if e.readiness == nil {
+		return
+	}
+	snapshot := e.readiness.Snapshot()
+	ready := 0.0
+	if snapshot.Ready {
+		ready = 1
+	}
+	writeHelpType(writer, "albion_market_api_readiness_ready", "Whether the most recent readiness check succeeded.", "gauge")
+	writeMetric(writer, "albion_market_api_readiness_ready", nil, ready)
+	writeHelpType(writer, "albion_market_api_readiness_checks_total", "Readiness checks by result.", "counter")
+	for _, result := range []string{"success", "error"} {
+		writeMetric(writer, "albion_market_api_readiness_checks_total", map[string]string{"result": result}, float64(snapshot.Checks[result]))
+	}
+	writeHelpType(writer, "albion_market_api_readiness_failures_total", "Readiness failures by bounded component.", "counter")
+	components := make([]string, 0, len(snapshot.Failures))
+	for component := range snapshot.Failures {
+		components = append(components, component)
+	}
+	sort.Strings(components)
+	for _, component := range components {
+		writeMetric(writer, "albion_market_api_readiness_failures_total", map[string]string{"component": component}, float64(snapshot.Failures[component]))
+	}
+	writeHelpType(writer, "albion_market_api_readiness_check_duration_seconds", "Readiness check duration in seconds.", "histogram")
+	writeHistogram(writer, "albion_market_api_readiness_check_duration_seconds", nil, snapshot.Durations)
+	writeOptionalTimestampWithoutLabels(writer, "albion_market_api_readiness_last_success_timestamp_seconds", snapshot.LastSuccessAt)
+	writeOptionalTimestampWithoutLabels(writer, "albion_market_api_readiness_last_failure_timestamp_seconds", snapshot.LastFailureAt)
+}
+
 func (e *PrometheusExporter) writeDatabase(ctx context.Context, writer io.Writer) {
 	if e.databasePool != nil {
 		snapshot := e.databasePool.Snapshot(ctx)
@@ -335,8 +430,16 @@ func (e *PrometheusExporter) writeDatabase(ctx context.Context, writer io.Writer
 		}
 		writeHelpType(writer, "albion_market_api_database_ready", "Whether PostgreSQL answered the most recent metrics-time ping.", "gauge")
 		writeMetric(writer, "albion_market_api_database_ready", nil, ready)
+		writeHelpType(writer, "albion_market_api_database_pool_acquisition_duration_seconds", "Duration of the most recent metrics-time PostgreSQL pool acquisition.", "gauge")
+		writeMetric(writer, "albion_market_api_database_pool_acquisition_duration_seconds", nil, snapshot.AcquisitionLatency.Seconds())
 		writeHelpType(writer, "albion_market_api_database_ping_duration_seconds", "Duration of the most recent metrics-time PostgreSQL ping.", "gauge")
 		writeMetric(writer, "albion_market_api_database_ping_duration_seconds", nil, snapshot.PingLatency.Seconds())
+		utilization := 0.0
+		if snapshot.Pool.MaxConnections > 0 {
+			utilization = float64(snapshot.Pool.AcquiredConnections) / float64(snapshot.Pool.MaxConnections)
+		}
+		writeHelpType(writer, "albion_market_api_database_pool_utilization_ratio", "Fraction of configured PostgreSQL connections currently acquired.", "gauge")
+		writeMetric(writer, "albion_market_api_database_pool_utilization_ratio", nil, utilization)
 
 		poolMetrics := []struct {
 			name  string
@@ -359,6 +462,12 @@ func (e *PrometheusExporter) writeDatabase(ctx context.Context, writer io.Writer
 			writeHelpType(writer, metric.name, metric.help, metric.kind)
 			writeMetric(writer, metric.name, nil, metric.value)
 		}
+		averageAcquire := 0.0
+		if snapshot.Pool.AcquireCount > 0 {
+			averageAcquire = snapshot.Pool.AcquireDuration.Seconds() / float64(snapshot.Pool.AcquireCount)
+		}
+		writeHelpType(writer, "albion_market_api_database_pool_acquire_duration_seconds_average", "Average PostgreSQL pool acquisition duration since process start.", "gauge")
+		writeMetric(writer, "albion_market_api_database_pool_acquire_duration_seconds_average", nil, averageAcquire)
 	}
 
 	snapshot := e.database.Snapshot()
@@ -379,6 +488,15 @@ func (e *PrometheusExporter) writeDatabase(ctx context.Context, writer io.Writer
 			"result":    key.Result,
 		}, float64(snapshot.Operations[key]))
 	}
+	writeHelpType(writer, "albion_market_api_database_errors_total", "Failed database operations by bounded operation name.", "counter")
+	for _, key := range operationKeys {
+		if key.Result != "error" {
+			continue
+		}
+		writeMetric(writer, "albion_market_api_database_errors_total", map[string]string{
+			"operation": key.Operation,
+		}, float64(snapshot.Operations[key]))
+	}
 
 	writeHelpType(writer, "albion_market_api_database_operation_duration_seconds", "Database operation duration in seconds.", "histogram")
 	operations := make([]string, 0, len(snapshot.Durations))
@@ -391,6 +509,52 @@ func (e *PrometheusExporter) writeDatabase(ctx context.Context, writer io.Writer
 			"operation": operation,
 		}, snapshot.Durations[operation])
 	}
+	writeMappedDatabaseHistogram(writer, "albion_market_api_ingest_copy_duration_seconds", "CopyFrom duration by ingest stream.", snapshot.Durations, map[string]string{
+		"copy_raw_prices":  "prices",
+		"copy_raw_history": "history",
+	})
+	writeMappedDatabaseHistogram(writer, "albion_market_api_ingest_upsert_duration_seconds", "Hot read-model upsert duration by ingest stream.", snapshot.Durations, map[string]string{
+		"upsert_current_prices": "prices",
+		"upsert_market_history": "history",
+	})
+	writeMappedDatabaseHistogram(writer, "albion_market_api_database_transaction_duration_seconds", "Database transaction duration by ingest stream.", snapshot.Durations, map[string]string{
+		"transaction_prices":  "prices",
+		"transaction_history": "history",
+	})
+}
+
+func writeMappedDatabaseHistogram(writer io.Writer, name, help string, durations map[string]durationHistogram, operations map[string]string) {
+	writeHelpType(writer, name, help, "histogram")
+	operationNames := make([]string, 0, len(operations))
+	for operation := range operations {
+		operationNames = append(operationNames, operation)
+	}
+	sort.Strings(operationNames)
+	for _, operation := range operationNames {
+		histogram, ok := durations[operation]
+		if !ok {
+			continue
+		}
+		writeHistogram(writer, name, map[string]string{"stream": operations[operation]}, histogram)
+	}
+}
+
+type ingestExportSnapshot struct {
+	requestsTotal         uint64
+	inFlight              uint64
+	succeededTotal        uint64
+	duplicatesTotal       uint64
+	errorsTotal           uint64
+	receivedEntriesTotal  uint64
+	acceptedEntriesTotal  uint64
+	storedEntriesTotal    uint64
+	rejectedEntriesTotal  uint64
+	duplicateEntriesTotal uint64
+	rowsTouchedTotal      uint64
+	durationTotal         time.Duration
+	lastRequestAt         *time.Time
+	lastSuccessAt         *time.Time
+	lastErrorAt           *time.Time
 }
 
 func (e *PrometheusExporter) writeIngest(writer io.Writer, stream string, metrics *IngestMetrics) {
@@ -398,21 +562,23 @@ func (e *PrometheusExporter) writeIngest(writer io.Writer, stream string, metric
 		return
 	}
 	snapshot := metrics.Snapshot()
-	writeIngestCommon(
-		writer,
-		stream,
-		snapshot.RequestsTotal,
-		snapshot.InFlight,
-		snapshot.SucceededTotal,
-		snapshot.DuplicatesTotal,
-		snapshot.ErrorsTotal,
-		snapshot.AcceptedEntriesTotal,
-		snapshot.CurrentRowsTouchedTotal,
-		snapshot.DurationTotal,
-		snapshot.LastRequestAt,
-		snapshot.LastSuccessAt,
-		snapshot.LastErrorAt,
-	)
+	writeIngestCommon(writer, stream, ingestExportSnapshot{
+		requestsTotal:         snapshot.RequestsTotal,
+		inFlight:              snapshot.InFlight,
+		succeededTotal:        snapshot.SucceededTotal,
+		duplicatesTotal:       snapshot.DuplicatesTotal,
+		errorsTotal:           snapshot.ErrorsTotal,
+		receivedEntriesTotal:  snapshot.ReceivedEntriesTotal,
+		acceptedEntriesTotal:  snapshot.AcceptedEntriesTotal,
+		storedEntriesTotal:    snapshot.StoredEntriesTotal,
+		rejectedEntriesTotal:  snapshot.RejectedEntriesTotal,
+		duplicateEntriesTotal: snapshot.DuplicateEntriesTotal,
+		rowsTouchedTotal:      snapshot.CurrentRowsTouchedTotal,
+		durationTotal:         snapshot.DurationTotal,
+		lastRequestAt:         snapshot.LastRequestAt,
+		lastSuccessAt:         snapshot.LastSuccessAt,
+		lastErrorAt:           snapshot.LastErrorAt,
+	})
 }
 
 func (e *PrometheusExporter) writeHistoryIngest(writer io.Writer, stream string, metrics *HistoryIngestMetrics) {
@@ -420,63 +586,82 @@ func (e *PrometheusExporter) writeHistoryIngest(writer io.Writer, stream string,
 		return
 	}
 	snapshot := metrics.Snapshot()
-	writeIngestCommon(
-		writer,
-		stream,
-		snapshot.RequestsTotal,
-		snapshot.InFlight,
-		snapshot.SucceededTotal,
-		snapshot.DuplicatesTotal,
-		snapshot.ErrorsTotal,
-		snapshot.AcceptedEntriesTotal,
-		snapshot.HistoryRowsTouchedTotal,
-		snapshot.DurationTotal,
-		snapshot.LastRequestAt,
-		snapshot.LastSuccessAt,
-		snapshot.LastErrorAt,
-	)
-	writeMetric(writer, "albion_market_api_ingest_accepted_buckets_total", map[string]string{"stream": stream}, float64(snapshot.AcceptedBucketsTotal))
+	writeIngestCommon(writer, stream, ingestExportSnapshot{
+		requestsTotal:         snapshot.RequestsTotal,
+		inFlight:              snapshot.InFlight,
+		succeededTotal:        snapshot.SucceededTotal,
+		duplicatesTotal:       snapshot.DuplicatesTotal,
+		errorsTotal:           snapshot.ErrorsTotal,
+		receivedEntriesTotal:  snapshot.ReceivedEntriesTotal,
+		acceptedEntriesTotal:  snapshot.AcceptedEntriesTotal,
+		storedEntriesTotal:    snapshot.AcceptedEntriesTotal,
+		rejectedEntriesTotal:  snapshot.RejectedEntriesTotal,
+		duplicateEntriesTotal: snapshot.DuplicateEntriesTotal,
+		rowsTouchedTotal:      snapshot.HistoryRowsTouchedTotal,
+		durationTotal:         snapshot.DurationTotal,
+		lastRequestAt:         snapshot.LastRequestAt,
+		lastSuccessAt:         snapshot.LastSuccessAt,
+		lastErrorAt:           snapshot.LastErrorAt,
+	})
+	labels := map[string]string{"stream": stream}
+	writeMetric(writer, "albion_market_api_ingest_buckets_received_total", labels, float64(snapshot.ReceivedBucketsTotal))
+	writeMetric(writer, "albion_market_api_ingest_accepted_buckets_total", labels, float64(snapshot.AcceptedBucketsTotal))
+	writeMetric(writer, "albion_market_api_ingest_buckets_stored_total", labels, float64(snapshot.StoredBucketsTotal))
+	writeMetric(writer, "albion_market_api_ingest_buckets_rejected_total", labels, float64(snapshot.RejectedBucketsTotal))
+	writeMetric(writer, "albion_market_api_ingest_buckets_duplicate_total", labels, float64(snapshot.DuplicateBucketsTotal))
 }
 
-func writeIngestCommon(
-	writer io.Writer,
-	stream string,
-	requests uint64,
-	inFlight uint64,
-	succeeded uint64,
-	duplicates uint64,
-	errors uint64,
-	accepted uint64,
-	rowsTouched uint64,
-	durationTotal time.Duration,
-	lastRequest *time.Time,
-	lastSuccess *time.Time,
-	lastError *time.Time,
-) {
-	newSuccesses := succeeded
-	if duplicates <= succeeded {
-		newSuccesses -= duplicates
+func writeIngestCommon(writer io.Writer, stream string, snapshot ingestExportSnapshot) {
+	newSuccesses := snapshot.succeededTotal
+	if snapshot.duplicatesTotal <= snapshot.succeededTotal {
+		newSuccesses -= snapshot.duplicatesTotal
 	}
+	labels := map[string]string{"stream": stream}
 
-	writeMetric(writer, "albion_market_api_ingest_requests_total", map[string]string{"result": "success", "stream": stream}, float64(newSuccesses))
-	writeMetric(writer, "albion_market_api_ingest_requests_total", map[string]string{"result": "duplicate", "stream": stream}, float64(duplicates))
-	writeMetric(writer, "albion_market_api_ingest_requests_total", map[string]string{"result": "error", "stream": stream}, float64(errors))
-	writeMetric(writer, "albion_market_api_ingest_requests_in_flight", map[string]string{"stream": stream}, float64(inFlight))
-	writeMetric(writer, "albion_market_api_ingest_accepted_entries_total", map[string]string{"stream": stream}, float64(accepted))
-	writeMetric(writer, "albion_market_api_ingest_rows_touched_total", map[string]string{"stream": stream}, float64(rowsTouched))
-	writeMetric(writer, "albion_market_api_ingest_request_duration_seconds_sum", map[string]string{"stream": stream}, durationTotal.Seconds())
-	writeMetric(writer, "albion_market_api_ingest_request_duration_seconds_count", map[string]string{"stream": stream}, float64(succeeded+errors))
-	writeMetric(writer, "albion_market_api_ingest_observed_requests_total", map[string]string{"stream": stream}, float64(requests))
-	writeOptionalTimestamp(writer, "albion_market_api_ingest_last_request_timestamp_seconds", stream, lastRequest)
-	writeOptionalTimestamp(writer, "albion_market_api_ingest_last_success_timestamp_seconds", stream, lastSuccess)
-	writeOptionalTimestamp(writer, "albion_market_api_ingest_last_error_timestamp_seconds", stream, lastError)
+	results := []struct {
+		name  string
+		value uint64
+	}{
+		{name: "success", value: newSuccesses},
+		{name: "duplicate", value: snapshot.duplicatesTotal},
+		{name: "error", value: snapshot.errorsTotal},
+	}
+	for _, result := range results {
+		resultLabels := map[string]string{"result": result.name, "stream": stream}
+		writeMetric(writer, "albion_market_api_ingest_requests_total", resultLabels, float64(result.value))
+		writeMetric(writer, "albion_market_api_ingest_batches_total", resultLabels, float64(result.value))
+	}
+	writeMetric(writer, "albion_market_api_ingest_errors_total", labels, float64(snapshot.errorsTotal))
+	writeMetric(writer, "albion_market_api_ingest_requests_in_flight", labels, float64(snapshot.inFlight))
+	writeMetric(writer, "albion_market_api_ingest_entries_received_total", labels, float64(snapshot.receivedEntriesTotal))
+	writeMetric(writer, "albion_market_api_ingest_accepted_entries_total", labels, float64(snapshot.acceptedEntriesTotal))
+	writeMetric(writer, "albion_market_api_ingest_entries_stored_total", labels, float64(snapshot.storedEntriesTotal))
+	writeMetric(writer, "albion_market_api_ingest_entries_rejected_total", labels, float64(snapshot.rejectedEntriesTotal))
+	writeMetric(writer, "albion_market_api_ingest_entries_duplicate_total", labels, float64(snapshot.duplicateEntriesTotal))
+	writeMetric(writer, "albion_market_api_ingest_rows_touched_total", labels, float64(snapshot.rowsTouchedTotal))
+	writeMetric(writer, "albion_market_api_ingest_request_duration_seconds_sum", labels, snapshot.durationTotal.Seconds())
+	writeMetric(writer, "albion_market_api_ingest_request_duration_seconds_count", labels, float64(snapshot.succeededTotal+snapshot.errorsTotal))
+	writeMetric(writer, "albion_market_api_ingest_observed_requests_total", labels, float64(snapshot.requestsTotal))
+	writeOptionalTimestamp(writer, "albion_market_api_ingest_last_request_timestamp_seconds", stream, snapshot.lastRequestAt)
+	writeOptionalTimestamp(writer, "albion_market_api_ingest_last_success_timestamp_seconds", stream, snapshot.lastSuccessAt)
+	writeOptionalTimestamp(writer, "albion_market_api_ingest_last_error_timestamp_seconds", stream, snapshot.lastErrorAt)
 }
 
 func writeIngestMetricDescriptions(writer io.Writer) {
 	writeHelpType(writer, "albion_market_api_ingest_requests_total", "Ingest requests by stream and outcome.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_batches_total", "Completed ingest batches by stream and outcome.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_errors_total", "Failed ingest batches by stream.", "counter")
 	writeHelpType(writer, "albion_market_api_ingest_requests_in_flight", "Ingest requests currently being processed.", "gauge")
+	writeHelpType(writer, "albion_market_api_ingest_entries_received_total", "Parsed entries received by ingest stream.", "counter")
 	writeHelpType(writer, "albion_market_api_ingest_accepted_entries_total", "Accepted entries for non-duplicate ingest requests.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_entries_stored_total", "Entries stored by non-duplicate ingest requests.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_entries_rejected_total", "Parsed entries rejected with a failed ingest request.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_entries_duplicate_total", "Entries associated with duplicate ingest requests.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_buckets_received_total", "Parsed history buckets received.", "counter")
 	writeHelpType(writer, "albion_market_api_ingest_accepted_buckets_total", "Accepted history buckets for non-duplicate requests.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_buckets_stored_total", "History buckets stored by non-duplicate requests.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_buckets_rejected_total", "Parsed history buckets rejected with a failed request.", "counter")
+	writeHelpType(writer, "albion_market_api_ingest_buckets_duplicate_total", "History buckets associated with duplicate requests.", "counter")
 	writeHelpType(writer, "albion_market_api_ingest_rows_touched_total", "Read-model rows touched by non-duplicate ingest requests.", "counter")
 	writeHelpType(writer, "albion_market_api_ingest_request_duration_seconds", "Ingest request duration summary without quantiles.", "summary")
 	writeHelpType(writer, "albion_market_api_ingest_observed_requests_total", "All ingest requests observed by the process.", "counter")
@@ -488,6 +673,12 @@ func writeIngestMetricDescriptions(writer io.Writer) {
 func writeOptionalTimestamp(writer io.Writer, name, stream string, value *time.Time) {
 	if value != nil {
 		writeMetric(writer, name, map[string]string{"stream": stream}, float64(value.UTC().Unix()))
+	}
+}
+
+func writeOptionalTimestampWithoutLabels(writer io.Writer, name string, value *time.Time) {
+	if value != nil {
+		writeMetric(writer, name, nil, float64(value.UTC().Unix()))
 	}
 }
 
@@ -549,6 +740,28 @@ func normalizeMetricLabel(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func normalizeDatabaseOperation(operation string) string {
+	switch strings.TrimSpace(operation) {
+	case "copy_raw_history",
+		"copy_raw_prices",
+		"ingest_history",
+		"ingest_prices",
+		"ping",
+		"query_current_prices",
+		"query_market_history",
+		"readiness_acquire",
+		"readiness_ping",
+		"readiness_schema",
+		"transaction_history",
+		"transaction_prices",
+		"upsert_current_prices",
+		"upsert_market_history":
+		return strings.TrimSpace(operation)
+	default:
+		return "unknown"
+	}
 }
 
 func normalizeHTTPMethod(method string) string {

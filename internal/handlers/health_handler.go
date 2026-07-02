@@ -6,22 +6,25 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nachodev-ui/albion-market-api/internal/service"
+	"github.com/nachodev-ui/albion-market-api/internal/observability"
 )
 
 const defaultReadinessTimeout = 2 * time.Second
 
 type HealthHandler struct {
-	service          *service.MarketService
+	readiness        observability.ReadinessChecker
 	readinessTimeout time.Duration
 }
 
-func NewHealthHandler(service *service.MarketService, readinessTimeout ...time.Duration) *HealthHandler {
+func NewHealthHandler(
+	readiness observability.ReadinessChecker,
+	readinessTimeout ...time.Duration,
+) *HealthHandler {
 	timeout := defaultReadinessTimeout
 	if len(readinessTimeout) > 0 && readinessTimeout[0] > 0 {
 		timeout = readinessTimeout[0]
 	}
-	return &HealthHandler{service: service, readinessTimeout: timeout}
+	return &HealthHandler{readiness: readiness, readinessTimeout: timeout}
 }
 
 // Healthz is a liveness probe. It intentionally does not depend on PostgreSQL,
@@ -38,8 +41,8 @@ func (h *HealthHandler) Healthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// Readyz is a readiness probe. It verifies that PostgreSQL can answer within a
-// bounded timeout before the API is considered ready for traffic.
+// Readyz verifies that the pool can provide a connection, PostgreSQL answers
+// through that connection, and the schema marker and required relations exist.
 func (h *HealthHandler) Readyz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodGet {
@@ -48,9 +51,18 @@ func (h *HealthHandler) Readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h == nil || h.readiness == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "error",
+			"error":  "service unavailable",
+		})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), h.readinessTimeout)
 	defer cancel()
-	if err := h.service.Ping(ctx); err != nil {
+	snapshot := h.readiness.Check(ctx)
+	if !snapshot.Ready {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"status": "error",
 			"error":  "service unavailable",

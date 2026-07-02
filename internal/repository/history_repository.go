@@ -55,6 +55,8 @@ func (r *PgxMarketRepository) IngestHistory(ctx context.Context, req domain.Inge
 	if err != nil {
 		return domain.IngestHistoryResult{}, fmt.Errorf("begin history tx: %w", err)
 	}
+	transactionStarted := time.Now()
+	defer func() { r.observeDatabase("transaction_history", transactionStarted, err) }()
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
@@ -100,16 +102,12 @@ func (r *PgxMarketRepository) IngestHistory(ctx context.Context, req domain.Inge
 		marketHistoryIngestRawColumns,
 		newRawHistoryCopySource(requestUUID, serverID, req.Entries),
 	)
+	if err == nil && copiedRows != int64(acceptedBuckets) {
+		err = fmt.Errorf("copied %d rows, expected %d", copiedRows, acceptedBuckets)
+	}
 	r.observeDatabase("copy_raw_history", copyStarted, err)
 	if err != nil {
 		return domain.IngestHistoryResult{}, fmt.Errorf("copy raw market history: %w", err)
-	}
-	if copiedRows != int64(acceptedBuckets) {
-		return domain.IngestHistoryResult{}, fmt.Errorf(
-			"copy raw market history: copied %d rows, expected %d",
-			copiedRows,
-			acceptedBuckets,
-		)
 	}
 
 	// The raw table remains the durable audit trail. For each logical bucket we

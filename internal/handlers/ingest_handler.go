@@ -79,11 +79,27 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		duration := time.Since(startedAt)
+		stored := 0
+		rejected := 0
+		duplicateEntries := 0
+		switch {
+		case duplicate:
+			duplicateEntries = accepted
+		case statusCode >= 200 && statusCode < 300:
+			stored = accepted
+			rejected = max(entries-accepted, 0)
+		case entries > 0:
+			rejected = entries
+		}
 		h.metrics.RequestFinished(observability.IngestObservation{
 			CompletedAt:        time.Now(),
 			Duration:           duration,
 			StatusCode:         statusCode,
+			Received:           entries,
 			Accepted:           accepted,
+			Stored:             stored,
+			Rejected:           rejected,
+			DuplicateEntries:   duplicateEntries,
 			CurrentRowsTouched: currentRowsTouched,
 			Duplicate:          duplicate,
 			ErrorKind:          errorKind,

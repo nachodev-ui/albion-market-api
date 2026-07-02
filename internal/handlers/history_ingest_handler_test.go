@@ -45,8 +45,9 @@ func TestHistoryIngestHandlerRecordsMetricsAndOrderedLog(t *testing.T) {
 	}
 	snapshot := historyMetrics.Snapshot()
 	if snapshot.RequestsTotal != 1 || snapshot.SucceededTotal != 1 ||
+		snapshot.ReceivedEntriesTotal != 1 || snapshot.ReceivedBucketsTotal != 2 ||
 		snapshot.AcceptedEntriesTotal != 1 || snapshot.AcceptedBucketsTotal != 2 ||
-		snapshot.HistoryRowsTouchedTotal != 2 {
+		snapshot.StoredBucketsTotal != 2 || snapshot.HistoryRowsTouchedTotal != 2 {
 		t.Fatalf("history metrics = %#v", snapshot)
 	}
 	if priceMetrics.Snapshot().RequestsTotal != 0 {
@@ -106,7 +107,9 @@ func TestHistoryIngestHandlerReturnsOKForIdempotentDuplicate(t *testing.T) {
 		t.Fatalf("status code = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
 	}
 	snapshot := historyMetrics.Snapshot()
-	if snapshot.DuplicatesTotal != 1 || snapshot.AcceptedBucketsTotal != 0 {
+	if snapshot.DuplicatesTotal != 1 || snapshot.ReceivedEntriesTotal != 1 ||
+		snapshot.ReceivedBucketsTotal != 2 || snapshot.DuplicateEntriesTotal != 1 ||
+		snapshot.DuplicateBucketsTotal != 2 || snapshot.AcceptedBucketsTotal != 0 {
 		t.Fatalf("duplicate metrics = %#v", snapshot)
 	}
 }
@@ -115,12 +118,14 @@ func TestHistoryIngestHandlerHidesInternalErrorAndLogsDetail(t *testing.T) {
 	t.Parallel()
 
 	var logs bytes.Buffer
+	historyMetrics := observability.NewHistoryIngestMetrics()
 	handler := NewIngestHandler(
 		fakeIngestService{historyErr: errors.New("password authentication failed")},
 		testAuthenticator(t, "secret"),
 		1<<20,
 		observability.NewIngestMetrics(),
 		observability.NewLogger(&logs, "never"),
+		historyMetrics,
 	)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ingest/history", strings.NewReader(validHistoryIngestBody(t)))
@@ -136,6 +141,12 @@ func TestHistoryIngestHandlerHidesInternalErrorAndLogsDetail(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "password authentication failed") {
 		t.Fatalf("internal error was not logged: %s", logs.String())
+	}
+	snapshot := historyMetrics.Snapshot()
+	if snapshot.ErrorsTotal != 1 || snapshot.ReceivedEntriesTotal != 1 ||
+		snapshot.ReceivedBucketsTotal != 2 || snapshot.RejectedEntriesTotal != 1 ||
+		snapshot.RejectedBucketsTotal != 2 || snapshot.StoredBucketsTotal != 0 {
+		t.Fatalf("history error metrics = %#v, want parsed data rejected", snapshot)
 	}
 }
 

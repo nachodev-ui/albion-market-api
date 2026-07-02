@@ -95,6 +95,8 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 	if err != nil {
 		return domain.IngestPricesResult{}, fmt.Errorf("begin tx: %w", err)
 	}
+	transactionStarted := time.Now()
+	defer func() { r.observeDatabase("transaction_prices", transactionStarted, err) }()
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
@@ -131,16 +133,12 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 		marketIngestRawColumns,
 		newRawPriceCopySource(requestUUID, serverID, req.Entries),
 	)
+	if err == nil && copiedRows != int64(len(req.Entries)) {
+		err = fmt.Errorf("copied %d rows, expected %d", copiedRows, len(req.Entries))
+	}
 	r.observeDatabase("copy_raw_prices", copyStarted, err)
 	if err != nil {
 		return domain.IngestPricesResult{}, fmt.Errorf("copy raw market prices: %w", err)
-	}
-	if copiedRows != int64(len(req.Entries)) {
-		return domain.IngestPricesResult{}, fmt.Errorf(
-			"copy raw market prices: copied %d rows, expected %d",
-			copiedRows,
-			len(req.Entries),
-		)
 	}
 
 	// market_ingest_raw remains the durable audit trail. The request rows are

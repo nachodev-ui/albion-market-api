@@ -111,10 +111,34 @@ function Wait-ForApiHealth {
     throw "Compose deployment did not become healthy within $Timeout seconds:`n$Logs"
 }
 
+
+function Wait-ForServiceHealth {
+    param(
+        [Parameter(Mandatory = $true)][string]$Service,
+        [Parameter(Mandatory = $true)][int]$Timeout
+    )
+
+    $Deadline = [DateTime]::UtcNow.AddSeconds($Timeout)
+    do {
+        $ContainerId = Invoke-Compose -Arguments @("ps", "--quiet", $Service) -CaptureOutput
+        if (-not [string]::IsNullOrWhiteSpace($ContainerId)) {
+            $Running = Invoke-Docker -Arguments @("inspect", "--format", "{{.State.Running}}", $ContainerId) -CaptureOutput
+            $Health = Invoke-Docker -Arguments @("inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", $ContainerId) -CaptureOutput
+            if ($Running -eq "true" -and $Health -eq "healthy") {
+                return $ContainerId
+            }
+        }
+        Start-Sleep -Seconds 1
+    } while ([DateTime]::UtcNow -lt $Deadline)
+
+    $Logs = Invoke-Compose -Arguments @("logs", "--no-color", $Service) -CaptureOutput
+    throw "Compose service $Service did not become healthy within $Timeout seconds:`n$Logs"
+}
+
 $HostPort = Get-FreeTcpPort
 
 try {
-    Write-Host "[1/10] Checking Docker and initializing temporary secrets..."
+    Write-Host "[1/12] Checking Docker and initializing temporary secrets..."
     Invoke-Docker -Arguments @("info") | Out-Null
     New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
     & $Initializer `
@@ -131,14 +155,14 @@ try {
         throw "Deployment initializer failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "[2/10] Validating the rendered Compose model..."
+    Write-Host "[2/12] Validating the rendered Compose model..."
     Invoke-Compose -Arguments @("config", "--quiet")
 
-    Write-Host "[3/10] Building and starting PostgreSQL, migrations and API..."
+    Write-Host "[3/12] Building and starting PostgreSQL, migrations and API..."
     Invoke-Compose -Arguments @("up", "--build", "--detach")
     $ComposeStarted = $true
 
-    Write-Host "[4/10] Waiting for the API healthcheck..."
+    Write-Host "[4/12] Waiting for the API healthcheck..."
     $ApiId = Wait-ForApiHealth -Timeout $TimeoutSeconds
 
     $MigrationId = Invoke-Compose -Arguments @("ps", "--all", "--quiet", "migrate") -CaptureOutput
@@ -161,31 +185,38 @@ try {
         }
     }
 
-    Write-Host "[5/10] Verifying the liveness endpoint..."
+    Write-Host "[5/12] Verifying the liveness endpoint..."
     $Health = Invoke-RestMethod -Uri "http://127.0.0.1:$HostPort/healthz" -Method Get -TimeoutSec 5
     if ($Health.status -ne "ok") {
         throw "Unexpected health response: $($Health | ConvertTo-Json -Compress)"
     }
 
-    Write-Host "[6/10] Verifying the readiness endpoint..."
+    Write-Host "[6/12] Verifying the readiness endpoint..."
     $Readiness = Invoke-RestMethod -Uri "http://127.0.0.1:$HostPort/readyz" -Method Get -TimeoutSec 5
     if ($Readiness.status -ne "ok") {
         throw "Unexpected readiness response: $($Readiness | ConvertTo-Json -Compress)"
     }
 
-    Write-Host "[7/10] Verifying Prometheus metrics..."
+    Write-Host "[7/12] Verifying Prometheus metrics..."
     $MetricsBody = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$HostPort/metrics" -Method Get -TimeoutSec 5).Content
     foreach ($ExpectedMetric in @(
         "albion_market_api_build_info",
         "albion_market_api_http_requests_total",
-        "albion_market_api_database_ready 1"
+        "albion_market_api_http_errors_total",
+        "albion_market_api_readiness_ready 1",
+        'albion_market_api_readiness_checks_total{result="success"}',
+        "albion_market_api_database_ready 1",
+        "albion_market_api_database_pool_acquisition_duration_seconds",
+        "albion_market_api_ingest_batches_total",
+        "albion_market_api_ingest_entries_received_total",
+        "albion_market_api_database_transaction_duration_seconds"
     )) {
         if ($MetricsBody -notmatch [Regex]::Escape($ExpectedMetric)) {
             throw "Metrics output is missing $ExpectedMetric"
         }
     }
 
-    Write-Host "[8/10] Verifying hardened runtime and mounted secrets..."
+    Write-Host "[8/12] Verifying hardened runtime and mounted secrets..."
     $Inspect = (Invoke-Docker -Arguments @("inspect", $ApiId) -CaptureOutput | ConvertFrom-Json)[0]
     if ($Inspect.Config.User -ne "65532:65532") {
         throw "API runtime user is '$($Inspect.Config.User)'; expected 65532:65532."
@@ -232,14 +263,69 @@ try {
         }
     }
 
-    Write-Host "[9/10] Verifying graceful shutdown..."
+    Write-Host "[9/12] Verifying liveness/readiness separation during a PostgreSQL outage..."
+    $RestartCountBefore = [int](Invoke-Docker -Arguments @("inspect", "--format", "{{.RestartCount}}", $ApiId) -CaptureOutput)
+    Invoke-Compose -Arguments @("stop", "postgres")
+
+    $HealthDuringOutage = Invoke-RestMethod -Uri "http://127.0.0.1:$HostPort/healthz" -Method Get -TimeoutSec 5
+    if ($HealthDuringOutage.status -ne "ok") {
+        throw "Liveness failed during the PostgreSQL outage."
+    }
+
+    $ReadyStatus = 200
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$HostPort/readyz" -Method Get -TimeoutSec 5 | Out-Null
+    }
+    catch {
+        if ($null -eq $_.Exception.Response) {
+            throw
+        }
+        $ReadyStatus = [int]$_.Exception.Response.StatusCode
+    }
+    if ($ReadyStatus -ne 503) {
+        throw "Readiness returned HTTP $ReadyStatus during the PostgreSQL outage; expected 503."
+    }
+
+    $ApiHealthDuringOutage = Invoke-Docker -Arguments @("inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", $ApiId) -CaptureOutput
+    $RestartCountDuringOutage = [int](Invoke-Docker -Arguments @("inspect", "--format", "{{.RestartCount}}", $ApiId) -CaptureOutput)
+    if ($ApiHealthDuringOutage -ne "healthy") {
+        throw "The API container healthcheck is '$ApiHealthDuringOutage' during the PostgreSQL outage; liveness should remain healthy."
+    }
+    if ($RestartCountDuringOutage -ne $RestartCountBefore) {
+        throw "The API restarted during a brief PostgreSQL outage."
+    }
+
+    Write-Host "[10/12] Restoring PostgreSQL and verifying readiness recovery..."
+    Invoke-Compose -Arguments @("start", "postgres")
+    Wait-ForServiceHealth -Service "postgres" -Timeout $TimeoutSeconds | Out-Null
+
+    $RecoveryDeadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $Recovered = $false
+    do {
+        try {
+            $RecoveredReadiness = Invoke-RestMethod -Uri "http://127.0.0.1:$HostPort/readyz" -Method Get -TimeoutSec 5
+            if ($RecoveredReadiness.status -eq "ok") {
+                $Recovered = $true
+                break
+            }
+        }
+        catch {
+            # The pool may need a short interval to establish a fresh connection.
+        }
+        Start-Sleep -Seconds 1
+    } while ([DateTime]::UtcNow -lt $RecoveryDeadline)
+    if (-not $Recovered) {
+        throw "Readiness did not recover after PostgreSQL became healthy."
+    }
+
+    Write-Host "[11/12] Verifying graceful shutdown..."
     Invoke-Compose -Arguments @("stop", "--timeout", "15", "api")
     $ApiLogs = Invoke-Compose -Arguments @("logs", "--no-color", "api") -CaptureOutput
     if ($ApiLogs -notmatch "api\.stopped") {
         throw "The API did not log a graceful shutdown:`n$ApiLogs"
     }
 
-    Write-Host "[10/10] Compose deployment smoke test completed."
+    Write-Host "[12/12] Compose deployment smoke test completed."
     Write-Host "[OK] Reproducible deployment, migrations and secret mounts validated."
     Write-Host "Image=$ImageTag"
     Write-Host "RuntimeUser=$($Inspect.Config.User)"

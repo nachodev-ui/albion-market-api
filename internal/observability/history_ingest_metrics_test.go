@@ -18,25 +18,36 @@ func TestHistoryIngestMetricsTracksSuccessDuplicateAndError(t *testing.T) {
 		CompletedAt:        base.Add(time.Second),
 		Duration:           100 * time.Millisecond,
 		StatusCode:         http.StatusAccepted,
+		ReceivedEntries:    2,
+		ReceivedBuckets:    50,
 		AcceptedEntries:    2,
 		AcceptedBuckets:    50,
+		StoredBuckets:      50,
 		HistoryRowsTouched: 40,
 	})
 	metrics.RequestStarted(base.Add(2 * time.Second))
 	metrics.RequestFinished(HistoryIngestObservation{
-		CompletedAt:     base.Add(3 * time.Second),
-		Duration:        50 * time.Millisecond,
-		StatusCode:      http.StatusOK,
-		AcceptedEntries: 2,
-		AcceptedBuckets: 50,
-		Duplicate:       true,
+		CompletedAt:      base.Add(3 * time.Second),
+		Duration:         50 * time.Millisecond,
+		StatusCode:       http.StatusOK,
+		ReceivedEntries:  2,
+		ReceivedBuckets:  50,
+		AcceptedEntries:  2,
+		AcceptedBuckets:  50,
+		DuplicateEntries: 2,
+		DuplicateBuckets: 50,
+		Duplicate:        true,
 	})
 	metrics.RequestStarted(base.Add(4 * time.Second))
 	metrics.RequestFinished(HistoryIngestObservation{
-		CompletedAt: base.Add(5 * time.Second),
-		Duration:    150 * time.Millisecond,
-		StatusCode:  http.StatusInternalServerError,
-		ErrorKind:   "database_error",
+		CompletedAt:     base.Add(5 * time.Second),
+		Duration:        150 * time.Millisecond,
+		StatusCode:      http.StatusInternalServerError,
+		ReceivedEntries: 3,
+		ReceivedBuckets: 75,
+		RejectedEntries: 3,
+		RejectedBuckets: 75,
+		ErrorKind:       "database_error",
 	})
 
 	snapshot := metrics.Snapshot()
@@ -45,8 +56,13 @@ func TestHistoryIngestMetricsTracksSuccessDuplicateAndError(t *testing.T) {
 		t.Fatalf("request metrics = %#v", snapshot)
 	}
 	if snapshot.AcceptedEntriesTotal != 2 || snapshot.AcceptedBucketsTotal != 50 ||
-		snapshot.HistoryRowsTouchedTotal != 40 {
+		snapshot.StoredBucketsTotal != 50 || snapshot.HistoryRowsTouchedTotal != 40 {
 		t.Fatalf("accepted metrics = %#v", snapshot)
+	}
+	if snapshot.ReceivedEntriesTotal != 7 || snapshot.ReceivedBucketsTotal != 175 ||
+		snapshot.DuplicateEntriesTotal != 2 || snapshot.DuplicateBucketsTotal != 50 ||
+		snapshot.RejectedEntriesTotal != 3 || snapshot.RejectedBucketsTotal != 75 {
+		t.Fatalf("received/duplicate/rejected metrics = %#v", snapshot)
 	}
 	if snapshot.AverageDuration != 100*time.Millisecond || snapshot.MaxDuration != 150*time.Millisecond ||
 		snapshot.LastDuration != 150*time.Millisecond {
@@ -73,8 +89,11 @@ func TestHistoryIngestMetricsIsConcurrencySafe(t *testing.T) {
 				CompletedAt:        at.Add(time.Millisecond),
 				Duration:           time.Millisecond,
 				StatusCode:         http.StatusAccepted,
+				ReceivedEntries:    1,
+				ReceivedBuckets:    2,
 				AcceptedEntries:    1,
 				AcceptedBuckets:    2,
+				StoredBuckets:      2,
 				HistoryRowsTouched: 1,
 			})
 		}(index)

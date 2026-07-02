@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,10 +22,11 @@ type DatabasePoolStats struct {
 }
 
 type DatabaseSnapshot struct {
-	Healthy     bool
-	PingLatency time.Duration
-	Pool        DatabasePoolStats
-	Err         error
+	Healthy            bool
+	AcquisitionLatency time.Duration
+	PingLatency        time.Duration
+	Pool               DatabasePoolStats
+	Err                error
 }
 
 type DatabaseMonitor interface {
@@ -40,15 +42,27 @@ func NewPgxDatabaseMonitor(pool *pgxpool.Pool) *PgxDatabaseMonitor {
 }
 
 func (m *PgxDatabaseMonitor) Snapshot(ctx context.Context) DatabaseSnapshot {
-	started := time.Now()
-	err := m.pool.Ping(ctx)
-	latency := time.Since(started)
+	if m == nil || m.pool == nil {
+		return DatabaseSnapshot{Err: errors.New("database pool is not configured")}
+	}
+
+	acquireStarted := time.Now()
+	conn, err := m.pool.Acquire(ctx)
+	acquisitionLatency := time.Since(acquireStarted)
+	pingLatency := time.Duration(0)
+	if err == nil {
+		pingStarted := time.Now()
+		err = conn.Ping(ctx)
+		pingLatency = time.Since(pingStarted)
+		conn.Release()
+	}
 	stats := m.pool.Stat()
 
 	return DatabaseSnapshot{
-		Healthy:     err == nil,
-		PingLatency: latency,
-		Err:         err,
+		Healthy:            err == nil,
+		AcquisitionLatency: acquisitionLatency,
+		PingLatency:        pingLatency,
+		Err:                err,
 		Pool: DatabasePoolStats{
 			MaxConnections:          stats.MaxConns(),
 			TotalConnections:        stats.TotalConns(),

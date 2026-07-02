@@ -23,7 +23,9 @@ func TestIngestMetricsConcurrentUpdates(t *testing.T) {
 				CompletedAt:        startedAt.Add(time.Second),
 				Duration:           time.Duration(index+1) * time.Millisecond,
 				StatusCode:         202,
+				Received:           500,
 				Accepted:           500,
+				Stored:             500,
 				CurrentRowsTouched: 500,
 			})
 		}(i)
@@ -43,8 +45,9 @@ func TestIngestMetricsConcurrentUpdates(t *testing.T) {
 	if snapshot.ErrorsTotal != 0 {
 		t.Fatalf("ErrorsTotal = %d, want 0", snapshot.ErrorsTotal)
 	}
-	if snapshot.AcceptedEntriesTotal != workers*500 {
-		t.Fatalf("AcceptedEntriesTotal = %d, want %d", snapshot.AcceptedEntriesTotal, workers*500)
+	if snapshot.ReceivedEntriesTotal != workers*500 || snapshot.AcceptedEntriesTotal != workers*500 ||
+		snapshot.StoredEntriesTotal != workers*500 {
+		t.Fatalf("entry totals = %#v, want %d received/accepted/stored", snapshot, workers*500)
 	}
 	if snapshot.CurrentRowsTouchedTotal != workers*500 {
 		t.Fatalf("CurrentRowsTouchedTotal = %d, want %d", snapshot.CurrentRowsTouchedTotal, workers*500)
@@ -61,18 +64,23 @@ func TestIngestMetricsDoesNotCountDuplicateEntriesTwice(t *testing.T) {
 	now := time.Now()
 	metrics.RequestStarted(now)
 	metrics.RequestFinished(IngestObservation{
-		CompletedAt: now,
-		Duration:    time.Millisecond,
-		StatusCode:  200,
-		Accepted:    500,
-		Duplicate:   true,
+		CompletedAt:      now,
+		Duration:         time.Millisecond,
+		StatusCode:       200,
+		Received:         500,
+		Accepted:         500,
+		DuplicateEntries: 500,
+		Duplicate:        true,
 	})
 
 	snapshot := metrics.Snapshot()
 	if snapshot.DuplicatesTotal != 1 {
 		t.Fatalf("DuplicatesTotal = %d, want 1", snapshot.DuplicatesTotal)
 	}
-	if snapshot.AcceptedEntriesTotal != 0 {
-		t.Fatalf("AcceptedEntriesTotal = %d, want 0", snapshot.AcceptedEntriesTotal)
+	if snapshot.AcceptedEntriesTotal != 0 || snapshot.StoredEntriesTotal != 0 {
+		t.Fatalf("accepted/stored entries = %#v, want zero for duplicate", snapshot)
+	}
+	if snapshot.ReceivedEntriesTotal != 500 || snapshot.DuplicateEntriesTotal != 500 {
+		t.Fatalf("duplicate entry totals = %#v, want 500", snapshot)
 	}
 }
