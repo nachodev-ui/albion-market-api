@@ -1,0 +1,67 @@
+name: Quality checks
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Go quality checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reject committed secret files
+        shell: bash
+        run: |
+          forbidden="$(git ls-files | grep -E '(^|/)\.env($|\.)|(^|/)secrets/|\.(token|secret)$' | grep -Ev '(^|/)\.env\.example$' || true)"
+          if [[ -n "$forbidden" ]]; then
+            printf 'Forbidden secret-bearing files are tracked:\n%s\n' "$forbidden"
+            exit 1
+          fi
+          if git grep -nE -e '-----BEGIN ([A-Z ]+ )?PRIVATE KEY-----' -- . ':!*.md'; then
+            echo 'A private key marker was found in tracked source files.'
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Files that require gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+      - name: Build API
+        run: go build -o /tmp/albion-market-api ./cmd/api
