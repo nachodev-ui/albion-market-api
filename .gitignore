@@ -45,3 +45,7 @@ secrets/
 
 # Reportes locales de revisión de índices PostgreSQL
 /artifacts/postgres-index-review/
+# Portal de documentación
+node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
