@@ -30,7 +30,3 @@ secrets/
 
 # Reportes locales de auditoría PostgreSQL
 /artifacts/postgres-audit/
-
-# Reportes locales de retencion PostgreSQL
-/artifacts/postgres-retention/
-/artifacts/postgres-retention-test/
