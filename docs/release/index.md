@@ -80,7 +80,7 @@ git switch -c release/v0.1.0
 git push origin release/v0.1.0
 ```
 
-`.github/workflows/release-request.yml` valida que la rama coincida con `release/vMAJOR.MINOR.PATCH`, que apunte al `main` vigente y que el tag no exista. Después crea un tag anotado inmutable, despacha `release.yml` sobre ese tag y elimina la rama de solicitud. No requiere PAT ni claves persistentes.
+`.github/workflows/release-request.yml` valida que la rama coincida con `release/vMAJOR.MINOR.PATCH`, que apunte al `main` vigente y que el tag no exista. Después crea un tag anotado inmutable, despacha `release.yml` sobre ese tag, espera su conclusión y publica el status `release/<tag>` en el commit. La rama de solicitud solo se elimina cuando la publicación completa termina correctamente. No requiere PAT ni claves persistentes.
 
 Como alternativa administrativa, un mantenedor puede crear y subir directamente el tag anotado desde el `main` vigente:
 

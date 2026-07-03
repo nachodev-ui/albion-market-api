@@ -145,6 +145,8 @@ func TestReleaseRequestWorkflowCreatesImmutableTagAndDispatchesRelease(t *testin
 		"startsWith(github.event.ref, 'release/v')",
 		"actions: write",
 		"contents: write",
+		"statuses: write",
+		"timeout-minutes: 40",
 		"cancel-in-progress: false",
 		"ref: ${{ github.event.ref }}",
 		"^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
@@ -155,6 +157,14 @@ func TestReleaseRequestWorkflowCreatesImmutableTagAndDispatchesRelease(t *testin
 		"git push origin \"refs/tags/${TAG}\"",
 		"actions/workflows/release.yml/dispatches",
 		"-f ref=\"${TAG}\"",
+		"actions/workflows/release.yml/runs?event=workflow_dispatch&per_page=20",
+		".event == \"workflow_dispatch\" and .head_sha == $revision",
+		"actions/runs/${run_id}",
+		"Release workflow ${run_id} completed with conclusion",
+		"if: always() && steps.release.outcome == 'success'",
+		"repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}",
+		"-f context=\"release/${TAG}\"",
+		"if: steps.wait.outcome == 'success' && steps.status.outcome == 'success'",
 		"git push origin --delete \"${REQUEST_REF}\"",
 	} {
 		requireContains(t, workflow, expected)

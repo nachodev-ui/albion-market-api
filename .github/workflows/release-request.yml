@@ -18,10 +18,11 @@ jobs:
       github.event.ref_type == 'branch' &&
       startsWith(github.event.ref, 'release/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 40
     permissions:
       actions: write
       contents: write
+      statuses: write
 
     steps:
       - name: Checkout release request
@@ -89,7 +90,112 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/dispatches" \
             -f ref="${TAG}"
 
+      - name: Wait for release workflow completion
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.release.outputs.revision }}
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_id=""
+          run_url=""
+          for attempt in $(seq 1 60); do
+            response="$(
+              gh api \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?event=workflow_dispatch&per_page=20"
+            )"
+            run_id="$(
+              jq -r \
+                --arg tag "${TAG}" \
+                --arg revision "${RELEASE_SHA}" \
+                '[.workflow_runs[] | select(.event == "workflow_dispatch" and .head_sha == $revision)] | sort_by(.created_at) | last | .id // empty' \
+                <<< "${response}"
+            )"
+            run_url="$(
+              jq -r \
+                --arg tag "${TAG}" \
+                --arg revision "${RELEASE_SHA}" \
+                '[.workflow_runs[] | select(.event == "workflow_dispatch" and .head_sha == $revision)] | sort_by(.created_at) | last | .html_url // empty' \
+                <<< "${response}"
+            )"
+            if [[ -n "${run_id}" ]]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [[ -z "${run_id}" ]]; then
+            echo "Release workflow run for ${TAG} was not found after dispatch." >&2
+            exit 1
+          fi
+
+          {
+            echo "run_id=${run_id}"
+            echo "run_url=${run_url}"
+          } >> "${GITHUB_OUTPUT}"
+
+          for attempt in $(seq 1 180); do
+            details="$(
+              gh api \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+            )"
+            status="$(jq -r '.status' <<< "${details}")"
+            conclusion="$(jq -r '.conclusion // empty' <<< "${details}")"
+
+            if [[ "${status}" == "completed" ]]; then
+              echo "conclusion=${conclusion}" >> "${GITHUB_OUTPUT}"
+              if [[ "${conclusion}" != "success" ]]; then
+                echo "Release workflow ${run_id} completed with conclusion ${conclusion:-missing}." >&2
+                exit 1
+              fi
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "Release workflow ${run_id} did not complete within the retry budget." >&2
+          exit 1
+
+      - name: Publish release commit status
+        id: status
+        if: always() && steps.release.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.release.outputs.revision }}
+          RUN_URL: ${{ steps.wait.outputs.run_url }}
+          TAG: ${{ steps.release.outputs.tag }}
+          WAIT_OUTCOME: ${{ steps.wait.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          state="failure"
+          description="Release ${TAG} failed or could not be verified"
+          if [[ "${WAIT_OUTCOME}" == "success" ]]; then
+            state="success"
+            description="Release ${TAG} published and verified"
+          fi
+
+          target_url="${RUN_URL:-${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/release.yml}"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/${GITHUB_REPOSITORY}/statuses/${RELEASE_SHA}" \
+            -f state="${state}" \
+            -f context="release/${TAG}" \
+            -f description="${description}" \
+            -f target_url="${target_url}"
+
       - name: Delete successful release request branch
+        if: steps.wait.outcome == 'success' && steps.status.outcome == 'success'
         env:
           REQUEST_REF: ${{ steps.release.outputs.request_ref }}
         shell: bash
@@ -98,15 +204,19 @@ jobs:
           git push origin --delete "${REQUEST_REF}"
 
       - name: Publish request summary
+        if: always()
         env:
-          TAG: ${{ steps.release.outputs.tag }}
           RELEASE_SHA: ${{ steps.release.outputs.revision }}
+          RUN_URL: ${{ steps.wait.outputs.run_url }}
+          TAG: ${{ steps.release.outputs.tag }}
+          WAIT_OUTCOME: ${{ steps.wait.outcome }}
         shell: bash
         run: |
           {
-            echo "### Release request accepted"
+            echo "### Release request result"
             echo
             echo "- Tag: \`${TAG}\`"
             echo "- Revision: \`${RELEASE_SHA}\`"
-            echo "- Workflow: \`release.yml\` dispatched on the immutable tag"
+            echo "- Release outcome: \`${WAIT_OUTCOME}\`"
+            echo "- Workflow run: ${RUN_URL:-not-found}"
           } >> "${GITHUB_STEP_SUMMARY}"
