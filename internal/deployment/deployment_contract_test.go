@@ -93,6 +93,32 @@ func TestDeploymentSecretsAreFileBackedAndExcludedFromBuild(t *testing.T) {
 	requireContains(t, gitignore, "/deploy/compose.env.local")
 }
 
+func TestContainerSmokeUsesDockerAssignedPortAndCleansFailedRuns(t *testing.T) {
+	script := readProjectFile(t, "scripts", "test-container.ps1")
+	for _, expected := range []string{
+		"[int]$HostPort = 0",
+		`"127.0.0.1::8080"`,
+		`@("port", $Container, "$ContainerPort/tcp")`,
+		"$HostPort = Resolve-PublishedPort",
+	} {
+		requireContains(t, script, expected)
+	}
+	if strings.Contains(script, "[int]$HostPort = 18080") {
+		t.Fatal("container smoke test must not reserve a fixed host port by default")
+	}
+
+	apiStart := strings.Index(script, `Write-Host "[5/9] Starting the API with a hardened runtime..."`)
+	if apiStart == -1 {
+		t.Fatal("could not find API startup block in container smoke test")
+	}
+	apiBlock := script[apiStart:]
+	cleanupMarker := strings.Index(apiBlock, "$ApiCreated = $true")
+	runMarker := strings.Index(apiBlock, "Invoke-Docker -Arguments @(")
+	if cleanupMarker == -1 || runMarker == -1 || cleanupMarker > runMarker {
+		t.Fatal("API cleanup must be armed before docker run can fail")
+	}
+}
+
 func TestLinuxSecretFilesSupportNonRootComposeRuntime(t *testing.T) {
 	for _, scriptPath := range [][]string{
 		{"scripts", "initialize-deployment.ps1"},
