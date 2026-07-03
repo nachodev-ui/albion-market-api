@@ -11,6 +11,7 @@ on:
       - package.json
       - package-lock.json
       - .github/workflows/documentation.yml
+      - .github/workflows/documentation-deployment-retry.yml
   push:
     branches:
       - develop
@@ -21,6 +22,7 @@ on:
       - package.json
       - package-lock.json
       - .github/workflows/documentation.yml
+      - .github/workflows/documentation-deployment-retry.yml
   workflow_dispatch:
 
 permissions:

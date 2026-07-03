@@ -119,6 +119,37 @@ func TestContainerSmokeUsesDockerAssignedPortAndCleansFailedRuns(t *testing.T) {
 	}
 }
 
+func TestDocumentationDeploymentRetriesOnlyTransientPagesFailures(t *testing.T) {
+	documentation := readProjectFile(t, ".github", "workflows", "documentation.yml")
+	retry := readProjectFile(t, ".github", "workflows", "documentation-deployment-retry.yml")
+
+	if count := strings.Count(documentation, "- .github/workflows/documentation-deployment-retry.yml"); count != 2 {
+		t.Fatalf("documentation workflow retry path count=%d, want 2", count)
+	}
+
+	for _, expected := range []string{
+		"workflow_run:",
+		"- Documentation",
+		"actions: write",
+		"github.event.workflow_run.event == 'push'",
+		"github.event.workflow_run.conclusion == 'failure'",
+		"github.event.workflow_run.run_attempt == 1",
+		`MAX_TOTAL_ATTEMPTS: "3"`,
+		`POLL_TIMEOUT_SECONDS: "720"`,
+		"filter=all&per_page=100",
+		`while (( run_attempt < MAX_TOTAL_ATTEMPTS ))`,
+		`"${build_conclusion}" != "success"`,
+		`"${deploy_conclusion}" != "failure"`,
+		"/rerun-failed-jobs",
+	} {
+		requireContains(t, retry, expected)
+	}
+
+	if strings.Contains(retry, "filter=latest") {
+		t.Fatal("documentation retry must preserve jobs from earlier run attempts")
+	}
+}
+
 func TestLinuxSecretFilesSupportNonRootComposeRuntime(t *testing.T) {
 	for _, scriptPath := range [][]string{
 		{"scripts", "initialize-deployment.ps1"},
