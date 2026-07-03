@@ -23,6 +23,7 @@ export default defineConfig({
       { text: 'PostgreSQL', link: '/database/' },
       { text: 'Operación', link: '/operations/' },
       { text: 'Despliegue', link: '/deployment/' },
+      { text: 'Releases', link: '/release/' },
       { text: 'Seguridad', link: '/security/' }
     ],
     sidebar: [
@@ -68,6 +69,14 @@ export default defineConfig({
         text: 'Despliegue',
         items: [
           { text: 'Contenedores seguros', link: '/deployment/' }
+        ]
+      },
+      {
+        text: 'Releases',
+        items: [
+          { text: 'Distribución y verificación', link: '/release/' },
+          { text: 'Rollback', link: '/release/rollback' },
+          { text: 'Mantenimiento', link: '/release/maintenance' }
         ]
       },
       {

@@ -208,7 +208,7 @@ El escaneo no usa `continue-on-error`; una infracción produce código de salida
 
 `.github/workflows/container.yml` ejecuta las pruebas contractuales de configuración, construye y escanea la imagen de producción y después ejecuta el smoke test Compose en Linux. También admite ejecución manual con `workflow_dispatch` una vez que el workflow ya existe en la rama predeterminada. Para esta primera incorporación, el escaneo real se validará mediante los checks del pull request.
 
-El workflow no publica imágenes. La distribución, firma, etiquetado y retención de artefactos se mantienen para la etapa de versionado y mantenimiento.
+La publicación se mantiene separada de los checks de pull request. Cuando un tag estable `vMAJOR.MINOR.PATCH` apunta al `main` vigente, `.github/workflows/release.yml` publica la imagen en GHCR, genera SBOM y checksums, firma por OIDC, crea attestations y abre el GitHub Release. Consulta [Releases y distribución](../release/) antes de etiquetar o desplegar.
 
 ## Perfil de observabilidad
 
