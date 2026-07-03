@@ -4,6 +4,7 @@
 
 - [Observabilidad](./observability.md)
 - [Alertas y respuesta](./alerts.md)
+- [Auditoría final de observabilidad](./observability-audit.md)
 - [Rendimiento de ingesta](./performance.md)
 - [Retención PostgreSQL](../database/retention.md)
 - [Backups y restauración](../database/backup-restore.md)

@@ -60,6 +60,7 @@ export default defineConfig({
           { text: 'Visión general', link: '/operations/' },
           { text: 'Observabilidad', link: '/operations/observability' },
           { text: 'Alertas y respuesta', link: '/operations/alerts' },
+          { text: 'Auditoría final', link: '/operations/observability-audit' },
           { text: 'Rendimiento', link: '/operations/performance' }
         ]
       },

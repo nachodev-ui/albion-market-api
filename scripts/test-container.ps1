@@ -2,8 +2,10 @@
 param(
     [string]$ImageTag = "albion-market-api:local-smoke",
     [string]$PostgresImage = "postgres:17.10-alpine3.23@sha256:3da929dcc3e63e3f0cc81fdb114c073ca48bfc7280e83a6324d5652fbee63742",
-    [ValidateRange(1024, 65535)]
-    [int]$HostPort = 18080,
+    [ValidateScript({
+        $_ -eq 0 -or ($_ -ge 1024 -and $_ -le 65535)
+    })]
+    [int]$HostPort = 0,
     [switch]$KeepContainers
 )
 
@@ -63,6 +65,23 @@ function Invoke-DockerCleanup {
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
+}
+
+function Resolve-PublishedPort {
+    param(
+        [Parameter(Mandatory = $true)][string]$Container,
+        [Parameter(Mandatory = $true)][int]$ContainerPort
+    )
+
+    $Binding = Invoke-Docker `
+        -Arguments @("port", $Container, "$ContainerPort/tcp") `
+        -CaptureOutput
+    $Match = [Regex]::Match($Binding, "(?m)^127\.0\.0\.1:(\d+)\s*$")
+    if (-not $Match.Success) {
+        throw "Could not resolve the loopback host port for $ContainerPort/tcp from '$Binding'."
+    }
+
+    return [int]$Match.Groups[1].Value
 }
 
 function New-RandomHex {
@@ -135,6 +154,13 @@ function Wait-ContainerHealth {
     throw "Container $Container did not become healthy within $TimeoutSeconds seconds:`n$logs"
 }
 
+$PublishBinding = if ($HostPort -eq 0) {
+    "127.0.0.1::8080"
+}
+else {
+    "127.0.0.1:${HostPort}:8080"
+}
+
 $PostgresPassword = New-RandomHex -Bytes 24
 $IngestToken = New-RandomHex -Bytes 32
 $DatabaseUrl = "postgres://albion_market:${PostgresPassword}@${DatabaseContainer}:5432/albion_market?sslmode=disable"
@@ -155,6 +181,7 @@ try {
     $NetworkCreated = $true
 
     Write-Host "[2/9] Starting temporary PostgreSQL..."
+    $DatabaseCreated = $true
     Invoke-Docker -Arguments @(
         "run", "--detach",
         "--name", $DatabaseContainer,
@@ -170,7 +197,6 @@ try {
         "--health-retries", "30",
         $PostgresImage
     )
-    $DatabaseCreated = $true
     Wait-ContainerHealth -Container $DatabaseContainer -TimeoutSeconds 90
 
     Write-Host "[3/9] Applying migrations in lexical order..."
@@ -207,11 +233,12 @@ try {
     }
 
     Write-Host "[5/9] Starting the API with a hardened runtime..."
+    $ApiCreated = $true
     Invoke-Docker -Arguments @(
         "run", "--detach",
         "--name", $ApiContainer,
         "--network", $NetworkName,
-        "--publish", "127.0.0.1:${HostPort}:8080",
+        "--publish", $PublishBinding,
         "--read-only",
         "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges",
@@ -232,7 +259,10 @@ try {
         "--env", "RATE_LIMIT_ENABLED=false",
         $ImageTag
     )
-    $ApiCreated = $true
+    if ($HostPort -eq 0) {
+        $HostPort = Resolve-PublishedPort -Container $ApiContainer -ContainerPort 8080
+        Write-Host "    Docker assigned API host port $HostPort."
+    }
     Wait-ContainerHealth -Container $ApiContainer -TimeoutSeconds 60
 
     $RuntimeEnvironment = Invoke-Docker -Arguments @("inspect", "--format", "{{json .Config.Env}}", $ApiContainer) -CaptureOutput

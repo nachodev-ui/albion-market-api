@@ -253,6 +253,7 @@ npm run docs:check
 
 .\scripts\test-container.ps1
 .\scripts\test-deployment-compose.ps1
+.\scripts\test-observability-compose.ps1
 ```
 
 Los tests cubren concurrencia, redacción, formato JSON, etiquetas acotadas,
@@ -292,3 +293,5 @@ La retención local de Prometheus se controla con `PROMETHEUS_RETENTION_TIME`, c
 El smoke test ejecuta `promtool check config`, pruebas unitarias de reglas, `amtool check-config`, arranca el perfil completo y comprueba targets, reglas cargadas, API de Alertmanager, dashboard de Grafana y endurecimiento de los contenedores.
 
 Consulta el [catálogo inicial de alertas](./alerts.md) para umbrales y acciones recomendadas.
+
+La [auditoría final de observabilidad](./observability-audit.md) reúne la matriz de aceptación, la evidencia reproducible y los riesgos residuales de la etapa 6.
