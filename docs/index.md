@@ -13,6 +13,9 @@ hero:
       text: Referencia HTTP
       link: /api/endpoints
     - theme: alt
+      text: Releases
+      link: /release/
+    - theme: alt
       text: Ver en GitHub
       link: https://github.com/nachodev-ui/albion-market-api
 
@@ -32,6 +35,9 @@ features:
   - icon: 📈
     title: Operable
     details: Estado, métricas, logs estructurados, mantenimiento programado y revisión reproducible de índices.
+  - icon: 📦
+    title: Distribución verificable
+    details: Imágenes por digest, SBOM, firma keyless, attestations y releases SemVer reproducibles.
   - icon: 📚
     title: Documentación como código
     details: Markdown versionado, búsqueda local, validación en pull requests y publicación desde main.
