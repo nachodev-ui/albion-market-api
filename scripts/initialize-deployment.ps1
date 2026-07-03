@@ -12,6 +12,14 @@ param(
     [string]$PostgresDatabase = "albion_market",
     [ValidateRange(1024, 65535)]
     [int]$ApiHostPort = 18080,
+    [ValidateRange(1024, 65535)]
+    [int]$PrometheusHostPort = 9090,
+    [ValidateRange(1024, 65535)]
+    [int]$AlertmanagerHostPort = 9093,
+    [ValidateRange(1024, 65535)]
+    [int]$GrafanaHostPort = 3000,
+    [ValidatePattern('^[1-9][0-9]*[smhdwy]$')]
+    [string]$PrometheusRetentionTime = "7d",
     [string]$AllowedOrigins = "https://example.invalid",
     [ValidatePattern('^[A-Za-z0-9._-]{1,64}$')]
     [string]$IngestTokenId = "receiver-current",
@@ -126,6 +134,10 @@ $EnvironmentContent = @"
 COMPOSE_PROJECT_NAME=$ComposeProjectName
 API_IMAGE=$ApiImage
 API_HOST_PORT=$ApiHostPort
+PROMETHEUS_HOST_PORT=$PrometheusHostPort
+PROMETHEUS_RETENTION_TIME=$PrometheusRetentionTime
+ALERTMANAGER_HOST_PORT=$AlertmanagerHostPort
+GRAFANA_HOST_PORT=$GrafanaHostPort
 API_ALLOWED_ORIGINS=$AllowedOrigins
 INGEST_TOKEN_ID=$IngestTokenId
 INGEST_REQUIRE_HTTPS=$($IngestRequireHttps.ToString().ToLowerInvariant())

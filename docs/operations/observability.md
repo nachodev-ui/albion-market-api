@@ -1,8 +1,6 @@
 # Observabilidad
 
-La API expone logs estructurados, correlación HTTP, liveness, readiness y métricas
-Prometheus. Prometheus, Grafana y Alertmanager se incorporan como servicios
-externos en el siguiente bloque de la etapa 6.
+La API expone logs estructurados, correlación HTTP, liveness, readiness y métricas Prometheus. El perfil opcional `observability` incorpora Prometheus, Grafana y Alertmanager sin convertirlos en requisitos para ejecutar la API.
 
 ## Logs estructurados
 
@@ -260,3 +258,37 @@ npm run docs:check
 Los tests cubren concurrencia, redacción, formato JSON, etiquetas acotadas,
 separación liveness/readiness, migraciones incompletas, caída temporal de
 PostgreSQL, recuperación y ausencia de secretos en la exposición.
+
+## Stack local opcional
+
+Desde la raíz del repositorio:
+
+```powershell
+docker compose `
+  --env-file .\deploy\compose.env.local `
+  --file .\deploy\compose.yaml `
+  --profile observability `
+  up --build --detach
+```
+
+Servicios locales:
+
+| Servicio | URL | Propósito |
+|---|---|---|
+| Grafana | `http://127.0.0.1:3000` | Dashboard provisionado de la API |
+| Prometheus | `http://127.0.0.1:9090` | Métricas, consultas y reglas |
+| Alertmanager | `http://127.0.0.1:9093` | Alertas activas, silencios y agrupación |
+
+Los tres servicios usan el perfil `observability`, puertos ligados a loopback, imágenes fijadas por digest, filesystem raíz de solo lectura, capacidades eliminadas y volúmenes independientes. Grafana se inicia como visor anónimo local, sin formulario de acceso ni registro de usuarios. Alertmanager usa `local-null`: muestra alertas en la interfaz, pero no envía notificaciones externas hasta que se configure explícitamente un receptor.
+
+La retención local de Prometheus se controla con `PROMETHEUS_RETENTION_TIME`, cuyo valor predeterminado es `7d`.
+
+## Validación del stack
+
+```powershell
+.\scripts\test-observability-compose.ps1
+```
+
+El smoke test ejecuta `promtool check config`, pruebas unitarias de reglas, `amtool check-config`, arranca el perfil completo y comprueba targets, reglas cargadas, API de Alertmanager, dashboard de Grafana y endurecimiento de los contenedores.
+
+Consulta el [catálogo inicial de alertas](./alerts.md) para umbrales y acciones recomendadas.

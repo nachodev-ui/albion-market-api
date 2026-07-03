@@ -1,0 +1,61 @@
+rule_files:
+  - /etc/prometheus/rules/albion-market-api.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: api unavailable becomes critical
+    interval: 1m
+    input_series:
+      - series: 'up{job="albion-market-api",instance="api:8080"}'
+        values: '0 0 0 0'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: AlbionMarketAPIUnavailable
+        exp_alerts:
+          - exp_labels:
+              alertname: AlbionMarketAPIUnavailable
+              instance: api:8080
+              job: albion-market-api
+              service: albion-market-api
+              severity: critical
+            exp_annotations:
+              summary: Albion Market API no está disponible
+              description: Prometheus no puede obtener /metrics desde la API durante al menos un minuto.
+              runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapiunavailable
+
+  - name: readiness failure becomes critical
+    interval: 1m
+    input_series:
+      - series: 'albion_market_api_readiness_ready{instance="api:8080",job="albion-market-api"}'
+        values: '0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: AlbionMarketAPINotReady
+        exp_alerts:
+          - exp_labels:
+              alertname: AlbionMarketAPINotReady
+              service: albion-market-api
+              severity: critical
+            exp_annotations:
+              summary: Albion Market API está viva pero no preparada
+              description: Readiness falla de forma sostenida; revisar PostgreSQL, pool y versión de esquema.
+              runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapinotready
+
+  - name: saturated pool becomes critical
+    interval: 1m
+    input_series:
+      - series: 'albion_market_api_database_pool_utilization_ratio{instance="api:8080",job="albion-market-api"}'
+        values: '0.95 0.95 0.95 0.95 0.95 0.95 0.95'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: AlbionMarketAPIDatabasePoolSaturated
+        exp_alerts:
+          - exp_labels:
+              alertname: AlbionMarketAPIDatabasePoolSaturated
+              service: albion-market-api
+              severity: critical
+            exp_annotations:
+              summary: Pool PostgreSQL saturado
+              description: Más del 90% de las conexiones configuradas permanece adquirido durante cinco minutos.
+              runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapidatabasepoolsaturated

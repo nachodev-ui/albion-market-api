@@ -3,6 +3,7 @@
 ## Herramientas operativas
 
 - [Observabilidad](./observability.md)
+- [Alertas y respuesta](./alerts.md)
 - [Rendimiento de ingesta](./performance.md)
 - [Retención PostgreSQL](../database/retention.md)
 - [Backups y restauración](../database/backup-restore.md)

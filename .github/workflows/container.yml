@@ -18,6 +18,8 @@ on:
       - scripts/initialize-deployment.ps1
       - scripts/test-container.ps1
       - scripts/test-deployment-compose.ps1
+      - scripts/test-observability-compose.ps1
+      - observability/**
       - go.mod
       - go.sum
       - .github/workflows/container.yml
@@ -37,6 +39,8 @@ on:
       - scripts/initialize-deployment.ps1
       - scripts/test-container.ps1
       - scripts/test-deployment-compose.ps1
+      - scripts/test-observability-compose.ps1
+      - observability/**
       - go.mod
       - go.sum
       - .github/workflows/container.yml
@@ -48,7 +52,7 @@ jobs:
   container:
     name: Reproducible deployment smoke test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       SCAN_IMAGE: albion-market-api:ci-scan-${{ github.sha }}
 
@@ -90,3 +94,7 @@ jobs:
       - name: Build and test secure Compose deployment
         shell: pwsh
         run: ./scripts/test-deployment-compose.ps1 -TimeoutSeconds 240
+
+      - name: Test optional observability stack
+        shell: pwsh
+        run: ./scripts/test-observability-compose.ps1 -TimeoutSeconds 300
