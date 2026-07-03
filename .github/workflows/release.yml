@@ -1,6 +1,7 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - v*.*.*
@@ -19,7 +20,7 @@ env:
 jobs:
   release:
     name: Publish signed release
-    if: github.repository == 'nachodev-ui/albion-market-api'
+    if: github.repository == 'nachodev-ui/albion-market-api' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

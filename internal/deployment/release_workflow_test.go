@@ -22,8 +22,10 @@ func TestReleaseWorkflowPublishesSignedImmutableEvidence(t *testing.T) {
 	workflow := readProjectFile(t, ".github", "workflows", "release.yml")
 
 	for _, expected := range []string{
+		"workflow_dispatch:",
 		"tags:\n      - v*.*.*",
 		"cancel-in-progress: false",
+		"github.ref_type == 'tag'",
 		"packages: write",
 		"id-token: write",
 		"attestations: write",
@@ -131,5 +133,49 @@ func TestReleaseDocumentationCoversVerificationRollbackAndMaintenance(t *testing
 	}
 	if count := strings.Count(dependabot, "target-branch: develop"); count != 4 {
 		t.Fatalf("Dependabot target-branch count=%d, want 4", count)
+	}
+}
+
+func TestReleaseRequestWorkflowCreatesImmutableTagAndDispatchesRelease(t *testing.T) {
+	workflow := readProjectFile(t, ".github", "workflows", "release-request.yml")
+
+	for _, expected := range []string{
+		"create:",
+		"github.event.ref_type == 'branch'",
+		"startsWith(github.event.ref, 'release/v')",
+		"actions: write",
+		"contents: write",
+		"cancel-in-progress: false",
+		"ref: ${{ github.event.ref }}",
+		"^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+		"must point to the current main commit",
+		"git ls-remote --exit-code --tags origin \"refs/tags/${tag}\"",
+		"must never be moved or reused",
+		"git tag -a \"${TAG}\" \"${RELEASE_SHA}\" -m \"release: ${TAG}\"",
+		"git push origin \"refs/tags/${TAG}\"",
+		"actions/workflows/release.yml/dispatches",
+		"-f ref=\"${TAG}\"",
+		"git push origin --delete \"${REQUEST_REF}\"",
+	} {
+		requireContains(t, workflow, expected)
+	}
+
+	lower := strings.ToLower(workflow)
+	for _, forbidden := range []string{"continue-on-error: true", "personal_access_token", "private_key", "github_pat"} {
+		if strings.Contains(lower, forbidden) {
+			t.Fatalf("release request workflow must not contain %q", forbidden)
+		}
+	}
+}
+
+func TestReleaseRequestWorkflowActionsArePinned(t *testing.T) {
+	workflow := readProjectFile(t, ".github", "workflows", "release-request.yml")
+	pattern := regexp.MustCompile(`(?m)^\s*uses:\s+actions/checkout@([0-9a-f]{40})(?:\s+#.*)?$`)
+	match := pattern.FindStringSubmatch(workflow)
+	if len(match) == 0 {
+		t.Fatal("release request checkout action must be pinned to a full commit SHA")
+	}
+	if match[1] != checkoutActionCommit {
+		t.Fatalf("release request checkout commit=%s, want %s", match[1], checkoutActionCommit)
 	}
 }
