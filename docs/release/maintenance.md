@@ -4,7 +4,7 @@
 
 - `main` representa el estado publicable y estable.
 - `develop` integra el siguiente conjunto de cambios.
-- Las ramas `feat/*`, `fix/*` y `test/*` son temporales.
+- Las ramas `feat/*`, `fix/*`, `test/*` y `release/v*` son temporales; una solicitud válida elimina automáticamente su rama `release/v*`.
 - Solo los tags SemVer creados desde el `main` vigente son releases soportados.
 - La versión soportada por defecto es la última release estable.
 - Una versión anterior recibe correcciones únicamente cuando una regresión impide actualizar inmediatamente o existe una vulnerabilidad crítica.

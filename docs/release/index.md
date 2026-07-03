@@ -66,7 +66,7 @@ Antes de etiquetar:
 4. confirma que `main` esté verde y que la documentación se haya publicado;
 5. selecciona la siguiente versión SemVer.
 
-Desde Git Bash:
+La vía recomendada es crear una rama efímera desde el `main` exacto:
 
 ```bash
 git fetch origin --prune --tags
@@ -76,6 +76,15 @@ git pull --ff-only origin main
 git status --short
 git log --oneline -5
 
+git switch -c release/v0.1.0
+git push origin release/v0.1.0
+```
+
+`.github/workflows/release-request.yml` valida que la rama coincida con `release/vMAJOR.MINOR.PATCH`, que apunte al `main` vigente y que el tag no exista. Después crea un tag anotado inmutable, despacha `release.yml` sobre ese tag y elimina la rama de solicitud. No requiere PAT ni claves persistentes.
+
+Como alternativa administrativa, un mantenedor puede crear y subir directamente el tag anotado desde el `main` vigente:
+
+```bash
 git tag -a v0.1.0 -m "release: v0.1.0"
 git push origin v0.1.0
 ```

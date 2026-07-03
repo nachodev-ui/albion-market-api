@@ -24,6 +24,7 @@ on:
       - go.sum
       - .github/workflows/container.yml
       - .github/workflows/release.yml
+      - .github/workflows/release-request.yml
       - .github/dependabot.yml
   push:
     branches:
@@ -47,6 +48,7 @@ on:
       - go.sum
       - .github/workflows/container.yml
       - .github/workflows/release.yml
+      - .github/workflows/release-request.yml
       - .github/dependabot.yml
 
 permissions:
