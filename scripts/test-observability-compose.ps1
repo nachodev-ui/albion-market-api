@@ -383,10 +383,13 @@ try {
         "AlbionMarketAPIUnavailable",
         "AlbionMarketAPINotReady",
         "AlbionMarketAPIHighHTTP5xxRate",
+        "AlbionMarketAPIHighHTTPLatency",
         "AlbionMarketAPIAuthenticationFailuresHigh",
         "AlbionMarketAPIIngestTrafficStopped",
         "AlbionMarketAPINoSuccessfulIngest",
+        "AlbionMarketAPIIngestErrorsRepeated",
         "AlbionMarketAPIDatabasePoolSaturated",
+        "AlbionMarketAPIDatabaseAcquireSlow",
         "AlbionMarketAPIIngestPersistenceErrorsRepeated",
         "AlbionMarketAPIRepeatedRestarts"
     )) {
