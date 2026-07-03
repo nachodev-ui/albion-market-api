@@ -144,7 +144,8 @@ func readProjectFile(t *testing.T, parts ...string) string {
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	return string(content)
+	value := strings.ReplaceAll(string(content), "\r\n", "\n")
+	return strings.ReplaceAll(value, "\r", "\n")
 }
 
 func composeServiceBlock(t *testing.T, compose, service string) string {

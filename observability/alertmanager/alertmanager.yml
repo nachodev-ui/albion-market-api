@@ -1,0 +1,24 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: local-null
+  group_by:
+    - alertname
+    - service
+    - severity
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+
+receivers:
+  - name: local-null
+
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal:
+      - alertname
+      - service

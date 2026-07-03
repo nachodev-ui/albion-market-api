@@ -7,15 +7,16 @@ El repositorio define una imagen de producción mínima y un despliegue Docker C
 | Archivo | Responsabilidad |
 |---|---|
 | `Dockerfile` | Compila los binarios y produce el runtime `scratch` |
-| `deploy/compose.yaml` | Declara PostgreSQL, migraciones y API |
+| `deploy/compose.yaml` | Declara PostgreSQL, migraciones, API y perfil opcional de observabilidad |
 | `deploy/compose.env.example` | Plantilla de configuración no secreta |
 | `scripts/initialize-deployment.ps1` | Genera secretos y `compose.env.local` sin imprimir valores |
 | `scripts/test-container.ps1` | Smoke test directo de la imagen |
 | `scripts/test-deployment-compose.ps1` | Prueba integral del despliegue Compose |
+| `scripts/test-observability-compose.ps1` | Prueba Prometheus, Alertmanager, Grafana, reglas y dashboard |
 
 ## Reproducibilidad de imágenes
 
-Las imágenes externas están fijadas por etiqueta legible y digest SHA-256:
+Las imágenes externas están fijadas por referencia explícita y digest SHA-256:
 
 ```text
 Go builder:
@@ -23,6 +24,8 @@ golang:1.26.4-bookworm@sha256:b305420a68d0f229d91eb3b3ed9e519fcf2cf5461da4bef997
 
 PostgreSQL:
 postgres:17.10-alpine3.23@sha256:3da929dcc3e63e3f0cc81fdb114c073ca48bfc7280e83a6324d5652fbee63742
+
+Prometheus, Alertmanager y Grafana también están fijados por digest en `deploy/compose.yaml`.
 ```
 
 Una reconstrucción usa exactamente esos manifiestos mientras los digests no cambien en el repositorio. `internal/deployment` impide regresar accidentalmente a imágenes externas flotantes.
@@ -32,7 +35,7 @@ Actualizar una imagen base exige:
 1. elegir una etiqueta explícita;
 2. resolver y revisar su digest;
 3. actualizar el archivo y la prueba contractual en el mismo commit;
-4. ejecutar ambos smoke tests;
+4. ejecutar los smoke tests de imagen, Compose base y observabilidad;
 5. revisar vulnerabilidades y notas de versión antes del merge.
 
 ## Propiedades de la imagen de API
@@ -206,3 +209,21 @@ El escaneo no usa `continue-on-error`; una infracción produce código de salida
 `.github/workflows/container.yml` ejecuta las pruebas contractuales de configuración, construye y escanea la imagen de producción y después ejecuta el smoke test Compose en Linux. También admite ejecución manual con `workflow_dispatch` una vez que el workflow ya existe en la rama predeterminada. Para esta primera incorporación, el escaneo real se validará mediante los checks del pull request.
 
 El workflow no publica imágenes. La distribución, firma, etiquetado y retención de artefactos se mantienen para la etapa de versionado y mantenimiento.
+
+## Perfil de observabilidad
+
+```powershell
+docker compose `
+  --env-file .\deploy\compose.env.local `
+  --file .\deploy\compose.yaml `
+  --profile observability `
+  up --build --detach
+```
+
+Sin `--profile observability`, Compose ejecuta únicamente PostgreSQL, migraciones y API. Con el perfil se añaden Prometheus, Alertmanager y Grafana, todos publicados solo en `127.0.0.1`.
+
+Valida el perfil completo con:
+
+```powershell
+.\scripts\test-observability-compose.ps1
+```

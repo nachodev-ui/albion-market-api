@@ -36,6 +36,7 @@ Los scripts PowerShell resuelven la conexión desde un parámetro explícito, va
 | `initialize-deployment.ps1` | Genera secretos y configuración local para Docker Compose |
 | `test-container.ps1` | Construye la imagen de producción y ejecuta un smoke test aislado con PostgreSQL |
 | `test-deployment-compose.ps1` | Valida PostgreSQL, migraciones, secretos y runtime mediante Compose |
+| `test-observability-compose.ps1` | Valida Prometheus, reglas, Alertmanager, Grafana y dashboard provisionado |
 
 Consulta [Despliegue reproducible y seguro](../deployment/) para el contrato de build y runtime.
 
