@@ -76,6 +76,18 @@ docker compose `
 
 La API solo arranca después de que PostgreSQL esté saludable y todas las migraciones terminen correctamente. Los secretos se montan como archivos y no se incorporan a la imagen.
 
+Activa el stack local opcional de observabilidad con:
+
+```powershell
+docker compose `
+  --env-file .\deploy\compose.env.local `
+  --file .\deploy\compose.yaml `
+  --profile observability `
+  up --build --detach
+```
+
+Grafana queda en `http://127.0.0.1:3000`, Prometheus en `:9090` y Alertmanager en `:9093`.
+
 ## Endpoints principales
 
 | Método | Ruta | Propósito |
@@ -103,6 +115,7 @@ npm run contracts:check
 npm run docs:dev
 .\scripts\test-container.ps1
 .\scripts\test-deployment-compose.ps1
+.\scripts\test-observability-compose.ps1
 ```
 
 La raíz del repositorio se mantiene deliberadamente pequeña. Toda guía extensa vive en [`docs/`](./docs/), que es la única fuente del portal VitePress.

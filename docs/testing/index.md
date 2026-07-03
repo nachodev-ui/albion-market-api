@@ -37,9 +37,10 @@ comparaciones automáticas con Go.
 ```powershell
 .\scripts\test-container.ps1
 .\scripts\test-deployment-compose.ps1
+.\scripts\test-observability-compose.ps1
 ```
 
-La primera prueba valida directamente la imagen. La segunda valida el modelo Compose completo: imágenes fijadas por digest, secretos montados, migraciones obligatorias, runtime endurecido, `/healthz`, `/readyz`, `/metrics`, ausencia de secretos en métricas y apagado por `SIGTERM`. También detiene PostgreSQL temporalmente para comprobar que liveness continúa saludable, readiness responde `503`, el contenedor no se reinicia y readiness se recupera al restaurar la base. Consulta [Despliegue reproducible y seguro](../deployment/).
+La primera prueba valida directamente la imagen. La segunda valida el modelo Compose base. La tercera valida el perfil opcional de observabilidad, las reglas con `promtool`, Alertmanager, Grafana y el dashboard. La prueba Compose base valida: imágenes fijadas por digest, secretos montados, migraciones obligatorias, runtime endurecido, `/healthz`, `/readyz`, `/metrics`, ausencia de secretos en métricas y apagado por `SIGTERM`. También detiene PostgreSQL temporalmente para comprobar que liveness continúa saludable, readiness responde `503`, el contenedor no se reinicia y readiness se recupera al restaurar la base. Consulta [Despliegue reproducible y seguro](../deployment/).
 
 ## Documentación
 

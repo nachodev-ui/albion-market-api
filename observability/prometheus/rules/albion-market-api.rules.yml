@@ -1,0 +1,176 @@
+groups:
+  - name: albion-market-api.availability
+    rules:
+      - alert: AlbionMarketAPIUnavailable
+        expr: up{job="albion-market-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: albion-market-api
+        annotations:
+          summary: Albion Market API no está disponible
+          description: Prometheus no puede obtener /metrics desde la API durante al menos un minuto.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapiunavailable
+
+      - alert: AlbionMarketAPINotReady
+        expr: max(albion_market_api_readiness_ready) == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: albion-market-api
+        annotations:
+          summary: Albion Market API está viva pero no preparada
+          description: Readiness falla de forma sostenida; revisar PostgreSQL, pool y versión de esquema.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapinotready
+
+      - alert: AlbionMarketAPIRepeatedRestarts
+        expr: changes(albion_market_api_process_start_time_seconds[30m]) >= 2
+        for: 1m
+        labels:
+          severity: warning
+          service: albion-market-api
+        annotations:
+          summary: Albion Market API se reinició repetidamente
+          description: El tiempo de inicio del proceso cambió al menos dos veces durante los últimos treinta minutos.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapirepeatedrestarts
+
+  - name: albion-market-api.http
+    rules:
+      - alert: AlbionMarketAPIHighHTTP5xxRate
+        expr: |
+          (
+            sum(rate(albion_market_api_http_errors_total{class="5xx"}[5m]))
+            /
+            clamp_min(sum(rate(albion_market_api_http_requests_total[5m])), 0.001)
+          ) > 0.05
+          and
+          sum(rate(albion_market_api_http_requests_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: albion-market-api
+        annotations:
+          summary: Tasa elevada de respuestas HTTP 5xx
+          description: Más del 5% del tráfico HTTP termina en 5xx con volumen sostenido.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapihighhttp5xxrate
+
+      - alert: AlbionMarketAPIHighHTTPLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(albion_market_api_http_request_duration_seconds_bucket{route!="/metrics"}[5m])
+            )
+          ) > 1
+          and
+          sum(rate(albion_market_api_http_requests_total{route!="/metrics"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: albion-market-api
+        annotations:
+          summary: Latencia HTTP p95 elevada
+          description: La latencia p95 supera un segundo durante diez minutos.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapihighhttplatency
+
+      - alert: AlbionMarketAPIAuthenticationFailuresHigh
+        expr: |
+          sum(
+            increase(
+              albion_market_api_http_requests_total{
+                route=~"/api/v1/ingest/(prices|history)",
+                status=~"401|403"
+              }[10m]
+            )
+          ) >= 10
+        for: 5m
+        labels:
+          severity: warning
+          service: albion-market-api
+        annotations:
+          summary: Aumentaron los errores de autenticación de ingesta
+          description: Se observaron al menos diez respuestas 401 o 403 en endpoints de ingesta durante diez minutos.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapiauthenticationfailureshigh
+
+  - name: albion-market-api.ingest
+    rules:
+      - alert: AlbionMarketAPIIngestTrafficStopped
+        expr: |
+          max(albion_market_api_ingest_last_request_timestamp_seconds) > 0
+          and
+          time() - max(albion_market_api_ingest_last_request_timestamp_seconds) > 900
+        for: 5m
+        labels:
+          severity: warning
+          service: albion-market-api
+        annotations:
+          summary: La ingesta dejó de recibir solicitudes
+          description: No se recibió ninguna solicitud de ingesta durante al menos quince minutos después de haber recibido tráfico previamente.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapiingesttrafficstopped
+
+      - alert: AlbionMarketAPINoSuccessfulIngest
+        expr: |
+          max(albion_market_api_ingest_last_success_timestamp_seconds) > 0
+          and
+          time() - max(albion_market_api_ingest_last_success_timestamp_seconds) > 1800
+        for: 5m
+        labels:
+          severity: critical
+          service: albion-market-api
+        annotations:
+          summary: No existen datos de ingesta nuevos
+          description: No se completa una ingesta satisfactoria desde hace al menos treinta minutos.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapinosuccessfulingest
+
+      - alert: AlbionMarketAPIIngestErrorsRepeated
+        expr: sum(increase(albion_market_api_ingest_errors_total[10m])) >= 3
+        for: 5m
+        labels:
+          severity: warning
+          service: albion-market-api
+        annotations:
+          summary: Errores continuos de ingesta
+          description: Se acumularon al menos tres batches fallidos durante los últimos diez minutos.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapiingesterrorsrepeated
+
+      - alert: AlbionMarketAPIIngestPersistenceErrorsRepeated
+        expr: |
+          sum(
+            increase(
+              albion_market_api_database_errors_total{
+                operation=~"copy_raw_(prices|history)|upsert_(current_prices|market_history)"
+              }[10m]
+            )
+          ) >= 3
+        for: 5m
+        labels:
+          severity: critical
+          service: albion-market-api
+        annotations:
+          summary: Errores continuos de CopyFrom o upsert
+          description: Persisten errores en la copia cruda o en la actualización del modelo de lectura.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapiingestpersistenceerrorsrepeated
+
+  - name: albion-market-api.postgresql
+    rules:
+      - alert: AlbionMarketAPIDatabasePoolSaturated
+        expr: max(albion_market_api_database_pool_utilization_ratio) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          service: albion-market-api
+        annotations:
+          summary: Pool PostgreSQL saturado
+          description: Más del 90% de las conexiones configuradas permanece adquirido durante cinco minutos.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapidatabasepoolsaturated
+
+      - alert: AlbionMarketAPIDatabaseAcquireSlow
+        expr: max(albion_market_api_database_pool_acquisition_duration_seconds) > 0.25
+        for: 5m
+        labels:
+          severity: warning
+          service: albion-market-api
+        annotations:
+          summary: Adquisición de conexión PostgreSQL lenta
+          description: La adquisición más reciente desde el pool supera 250 ms de forma sostenida.
+          runbook_url: https://nachodev-ui.github.io/albion-market-api/operations/alerts#albionmarketapidatabaseacquireslow

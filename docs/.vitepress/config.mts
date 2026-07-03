@@ -59,6 +59,7 @@ export default defineConfig({
         items: [
           { text: 'Visión general', link: '/operations/' },
           { text: 'Observabilidad', link: '/operations/observability' },
+          { text: 'Alertas y respuesta', link: '/operations/alerts' },
           { text: 'Rendimiento', link: '/operations/performance' }
         ]
       },
