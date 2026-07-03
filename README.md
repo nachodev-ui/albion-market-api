@@ -4,6 +4,7 @@
 [![API contracts](https://github.com/nachodev-ui/albion-market-api/actions/workflows/contracts.yml/badge.svg?branch=develop)](https://github.com/nachodev-ui/albion-market-api/actions/workflows/contracts.yml)
 [![Container checks](https://github.com/nachodev-ui/albion-market-api/actions/workflows/container.yml/badge.svg?branch=develop)](https://github.com/nachodev-ui/albion-market-api/actions/workflows/container.yml)
 [![Documentation](https://github.com/nachodev-ui/albion-market-api/actions/workflows/documentation.yml/badge.svg?branch=main)](https://github.com/nachodev-ui/albion-market-api/actions/workflows/documentation.yml)
+[![Release](https://github.com/nachodev-ui/albion-market-api/actions/workflows/release.yml/badge.svg)](https://github.com/nachodev-ui/albion-market-api/actions/workflows/release.yml)
 
 API centralizada en Go para recibir, consolidar y servir precios e historial de mercado de Albion Online mediante PostgreSQL.
 
@@ -35,6 +36,7 @@ Accesos directos:
 - [Seguridad](https://nachodev-ui.github.io/albion-market-api/security/)
 - [Operación y observabilidad](https://nachodev-ui.github.io/albion-market-api/operations/)
 - [Despliegue con contenedores](https://nachodev-ui.github.io/albion-market-api/deployment/)
+- [Releases, firma y rollback](https://nachodev-ui.github.io/albion-market-api/release/)
 
 ## Inicio rápido
 
@@ -87,6 +89,18 @@ docker compose `
 ```
 
 Grafana queda en `http://127.0.0.1:3000`, Prometheus en `:9090` y Alertmanager en `:9093`.
+
+## Distribución verificada
+
+Los tags estables `vMAJOR.MINOR.PATCH` creados desde el `main` vigente publican una imagen OCI en GitHub Container Registry y un GitHub Release con SBOM SPDX, checksums, firma Cosign keyless y attestations de provenance/SBOM.
+
+En producción debe fijarse el digest inmutable:
+
+```text
+ghcr.io/nachodev-ui/albion-market-api@sha256:<digest>
+```
+
+El procedimiento completo, la verificación para consumidores y el runbook de rollback están documentados en [Releases y distribución](https://nachodev-ui.github.io/albion-market-api/release/).
 
 ## Endpoints principales
 
