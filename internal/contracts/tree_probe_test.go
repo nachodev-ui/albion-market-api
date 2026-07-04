@@ -11,5 +11,7 @@ func TestOpenAPIContractMatchesRouterTreeProbe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve git tree: %v: %s", err, output)
 	}
-	t.Fatalf("TREE_SHA=%s", strings.TrimSpace(string(output)))
+	if strings.TrimSpace(string(output)) == "" {
+		t.Fatal("resolved tree SHA is empty")
+	}
 }
