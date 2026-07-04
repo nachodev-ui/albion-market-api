@@ -87,7 +87,9 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 
 	copyStarted := time.Now()
 	copiedRows, err := tx.CopyFrom(ctx, marketIngestRawTable, marketIngestRawColumns, newRawPriceCopySource(requestUUID, serverID, req.Entries))
-	if err == nil && copiedRows != int64(len(req.Entries)) { err = fmt.Errorf("copied %d rows, expected %d", copiedRows, len(req.Entries)) }
+	if err == nil && copiedRows != int64(len(req.Entries)) {
+		err = fmt.Errorf("copied %d rows, expected %d", copiedRows, len(req.Entries))
+	}
 	r.observeDatabase("copy_raw_prices", copyStarted, err)
 	if err != nil {
 		return domain.IngestPricesResult{}, fmt.Errorf("copy raw market prices: %w", err)
@@ -106,7 +108,9 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 	commitStarted := time.Now()
 	err = tx.Commit(ctx)
 	observability.RecordIngestCommit(ctx, time.Since(commitStarted))
-	if err != nil { return domain.IngestPricesResult{}, fmt.Errorf("commit tx: %w", err) }
+	if err != nil {
+		return domain.IngestPricesResult{}, fmt.Errorf("commit tx: %w", err)
+	}
 	return domain.IngestPricesResult{Accepted: len(req.Entries), CurrentRowsTouched: tag.RowsAffected()}, nil
 }
 
@@ -123,13 +127,17 @@ func newRawPriceCopySource(requestID pgtype.UUID, serverID int16, entries []doma
 }
 
 func (s *rawPriceCopySource) Next() bool {
-	if s.index >= len(s.entries) { return false }
+	if s.index >= len(s.entries) {
+		return false
+	}
 	s.index++
 	return true
 }
 
 func (s *rawPriceCopySource) Values() ([]any, error) {
-	if s.index == 0 || s.index > len(s.entries) { return nil, errCopySourceNotPositioned }
+	if s.index == 0 || s.index > len(s.entries) {
+		return nil, errCopySourceNotPositioned
+	}
 	entry := s.entries[s.index-1]
 	s.values[2] = entry.ObservedAt
 	s.values[3] = entry.LocationID
@@ -153,7 +161,9 @@ func (r *PgxMarketRepository) existingIngestResult(ctx context.Context, tx pgx.T
 	if err := tx.QueryRow(ctx, query, requestID).Scan(&acceptedCount, &currentRowsTouched, &status, &actualHash); err != nil {
 		return domain.IngestPricesResult{}, fmt.Errorf("query existing ingest request: %w", err)
 	}
-	if !equalHashes(actualHash, expectedHash) { return domain.IngestPricesResult{}, ErrRequestPayloadConflict }
+	if !equalHashes(actualHash, expectedHash) {
+		return domain.IngestPricesResult{}, ErrRequestPayloadConflict
+	}
 	switch status {
 	case "completed":
 		return domain.IngestPricesResult{Accepted: acceptedCount, CurrentRowsTouched: currentRowsTouched, Duplicate: true}, nil
@@ -166,14 +176,22 @@ func (r *PgxMarketRepository) existingIngestResult(ctx context.Context, tx pgx.T
 
 func canonicalRequestHash(req domain.IngestPricesRequest) ([]byte, error) {
 	encoded, err := json.Marshal(req)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	hash := sha256.Sum256(encoded)
 	return hash[:], nil
 }
 
 func equalHashes(a, b []byte) bool {
-	if len(a) != len(b) { return false }
-	for i := range a { if a[i] != b[i] { return false } }
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
 	return true
 }
 
@@ -181,11 +199,18 @@ func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, lookup dom
 	started := time.Now()
 	defer func() { r.observeDatabase("query_current_prices", started, err) }()
 	serverID, err := mapServer(lookup.Server)
-	if err != nil { return nil, err }
-	if len(lookup.LocationIDs) == 0 || len(lookup.Entries) == 0 { return []domain.CurrentPrice{}, nil }
+	if err != nil {
+		return nil, err
+	}
+	if len(lookup.LocationIDs) == 0 || len(lookup.Entries) == 0 {
+		return []domain.CurrentPrice{}, nil
+	}
 	itemKeys := make([]string, 0, len(lookup.Entries))
 	qualities := make([]int16, 0, len(lookup.Entries))
-	for _, entry := range lookup.Entries { itemKeys = append(itemKeys, entry.ItemKey); qualities = append(qualities, entry.Quality) }
+	for _, entry := range lookup.Entries {
+		itemKeys = append(itemKeys, entry.ItemKey)
+		qualities = append(qualities, entry.Quality)
+	}
 	const query = `
 		select server, location_id, item_key, quality, sell_price_min, sell_price_min_at,
 		       buy_price_max, buy_price_max_at, updated_at
@@ -194,7 +219,9 @@ func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, lookup dom
 		  and (item_key, quality) in (select * from unnest($3::text[], $4::smallint[]))
 		order by location_id, item_key, quality`
 	rows, err := r.db.Query(ctx, query, serverID, lookup.LocationIDs, itemKeys, qualities)
-	if err != nil { return nil, fmt.Errorf("query current prices: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("query current prices: %w", err)
+	}
 	defer rows.Close()
 	prices = make([]domain.CurrentPrice, 0)
 	for rows.Next() {
@@ -206,24 +233,34 @@ func (r *PgxMarketRepository) QueryCurrentPrices(ctx context.Context, lookup dom
 		price.Server = unmapServer(serverValue)
 		prices = append(prices, price)
 	}
-	if err := rows.Err(); err != nil { return nil, fmt.Errorf("rows current prices: %w", err) }
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows current prices: %w", err)
+	}
 	return prices, nil
 }
 
 func mapServer(server domain.Server) (int16, error) {
 	switch server {
-	case domain.ServerWest: return 1, nil
-	case domain.ServerEast: return 2, nil
-	case domain.ServerEurope: return 3, nil
-	default: return 0, fmt.Errorf("invalid server: %s", server)
+	case domain.ServerWest:
+		return 1, nil
+	case domain.ServerEast:
+		return 2, nil
+	case domain.ServerEurope:
+		return 3, nil
+	default:
+		return 0, fmt.Errorf("invalid server: %s", server)
 	}
 }
 
 func unmapServer(value int16) domain.Server {
 	switch value {
-	case 1: return domain.ServerWest
-	case 2: return domain.ServerEast
-	case 3: return domain.ServerEurope
-	default: return domain.ServerWest
+	case 1:
+		return domain.ServerWest
+	case 2:
+		return domain.ServerEast
+	case 3:
+		return domain.ServerEurope
+	default:
+		return domain.ServerWest
 	}
 }
