@@ -52,14 +52,22 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 	started := time.Now()
 	defer func() { r.observeDatabase("ingest_prices", started, err) }()
 	serverID, err := mapServer(req.Server)
-	if err != nil { return domain.IngestPricesResult{}, err }
+	if err != nil {
+		return domain.IngestPricesResult{}, err
+	}
 	requestHash, err := canonicalRequestHash(req)
-	if err != nil { return domain.IngestPricesResult{}, fmt.Errorf("hash ingest request: %w", err) }
+	if err != nil {
+		return domain.IngestPricesResult{}, fmt.Errorf("hash ingest request: %w", err)
+	}
 	var requestUUID pgtype.UUID
-	if err := requestUUID.Scan(req.RequestID); err != nil { return domain.IngestPricesResult{}, fmt.Errorf("invalid request_id: %w", err) }
+	if err := requestUUID.Scan(req.RequestID); err != nil {
+		return domain.IngestPricesResult{}, fmt.Errorf("invalid request_id: %w", err)
+	}
 
 	tx, err := r.db.Begin(ctx)
-	if err != nil { return domain.IngestPricesResult{}, fmt.Errorf("begin tx: %w", err) }
+	if err != nil {
+		return domain.IngestPricesResult{}, fmt.Errorf("begin tx: %w", err)
+	}
 	transactionStarted := time.Now()
 	defer func() { r.observeDatabase("transaction_prices", transactionStarted, err) }()
 	defer func() { observability.RecordIngestTransaction(ctx, time.Since(transactionStarted)) }()
