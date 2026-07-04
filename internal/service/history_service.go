@@ -55,6 +55,7 @@ func (s *MarketService) IngestHistory(
 		AcceptedBuckets:    result.AcceptedBuckets,
 		HistoryRowsTouched: result.HistoryRowsTouched,
 		Duplicate:          result.Duplicate,
+		PersistenceTiming:  result.PersistenceTiming,
 	}, nil
 }
 

@@ -204,6 +204,7 @@ func (h *IngestHandler) IngestHistory(w http.ResponseWriter, r *http.Request) {
 	duplicate = resp.Duplicate
 	errorKind = ""
 	errorDetail = ""
+	setIngestServerTiming(w.Header(), startedAt, resp.PersistenceTiming)
 	writeJSON(w, statusCode, resp)
 }
 

@@ -78,6 +78,7 @@ func (s *MarketService) IngestPrices(ctx context.Context, req domain.IngestPrice
 		Accepted:           result.Accepted,
 		CurrentRowsTouched: result.CurrentRowsTouched,
 		Duplicate:          result.Duplicate,
+		PersistenceTiming:  result.PersistenceTiming,
 	}, nil
 }
 
