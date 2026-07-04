@@ -39,6 +39,7 @@ func TestPrometheusExporterExposesBoundedMetrics(t *testing.T) {
 	databaseMetrics.Observe("copy_raw_prices", 20*time.Millisecond, errors.New("copy failed"))
 	databaseMetrics.Observe("upsert_current_prices", 30*time.Millisecond, nil)
 	databaseMetrics.Observe("transaction_prices", 40*time.Millisecond, nil)
+	databaseMetrics.Observe("commit_prices", 5*time.Millisecond, nil)
 
 	ingest := NewIngestMetrics()
 	now := time.Date(2026, time.July, 2, 18, 0, 0, 0, time.UTC)
@@ -107,6 +108,7 @@ func TestPrometheusExporterExposesBoundedMetrics(t *testing.T) {
 		`albion_market_api_ingest_copy_duration_seconds_count{stream="prices"} 1`,
 		`albion_market_api_ingest_upsert_duration_seconds_count{stream="prices"} 1`,
 		`albion_market_api_database_transaction_duration_seconds_count{stream="prices"} 1`,
+		`albion_market_api_database_commit_duration_seconds_count{stream="prices"} 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics output does not contain %q:\n%s", expected, body)

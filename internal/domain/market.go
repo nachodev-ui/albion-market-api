@@ -27,17 +27,24 @@ type PriceIngest struct {
 	BuyPriceMaxAt  *time.Time `json:"buy_price_max_at"`
 }
 
+type IngestPersistenceTiming struct {
+	Transaction time.Duration
+	Commit      time.Duration
+}
+
 type IngestPricesResponse struct {
-	RequestID          string `json:"request_id"`
-	Accepted           int    `json:"accepted"`
-	CurrentRowsTouched int64  `json:"current_rows_touched"`
-	Duplicate          bool   `json:"duplicate"`
+	RequestID          string                  `json:"request_id"`
+	Accepted           int                     `json:"accepted"`
+	CurrentRowsTouched int64                   `json:"current_rows_touched"`
+	Duplicate          bool                    `json:"duplicate"`
+	PersistenceTiming  IngestPersistenceTiming `json:"-"`
 }
 
 type IngestPricesResult struct {
 	Accepted           int
 	CurrentRowsTouched int64
 	Duplicate          bool
+	PersistenceTiming  IngestPersistenceTiming
 }
 
 // IngestHistoryRequest is the authenticated receiver-to-central-API contract.
@@ -64,11 +71,12 @@ type HistoryBucketIngest struct {
 }
 
 type IngestHistoryResponse struct {
-	RequestID          string `json:"request_id"`
-	AcceptedEntries    int    `json:"accepted_entries"`
-	AcceptedBuckets    int    `json:"accepted_buckets"`
-	HistoryRowsTouched int64  `json:"history_rows_touched"`
-	Duplicate          bool   `json:"duplicate"`
+	RequestID          string                  `json:"request_id"`
+	AcceptedEntries    int                     `json:"accepted_entries"`
+	AcceptedBuckets    int                     `json:"accepted_buckets"`
+	HistoryRowsTouched int64                   `json:"history_rows_touched"`
+	Duplicate          bool                    `json:"duplicate"`
+	PersistenceTiming  IngestPersistenceTiming `json:"-"`
 }
 
 type IngestHistoryResult struct {
@@ -76,6 +84,7 @@ type IngestHistoryResult struct {
 	AcceptedBuckets    int
 	HistoryRowsTouched int64
 	Duplicate          bool
+	PersistenceTiming  IngestPersistenceTiming
 }
 
 type MarketType string
