@@ -99,6 +99,7 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 	defer func() { r.observeDatabase("transaction_prices", transactionStarted, err) }()
 	defer func() {
 		result.PersistenceTiming.Transaction = time.Since(transactionStarted)
+		result.PersistenceTiming.TransactionMeasured = true
 	}()
 	defer func() {
 		_ = tx.Rollback(ctx)
@@ -328,7 +329,8 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 		CurrentRowsTouched: tag.RowsAffected(),
 		Duplicate:          false,
 		PersistenceTiming: domain.IngestPersistenceTiming{
-			Commit: commitDuration,
+			Commit:         commitDuration,
+			CommitMeasured: true,
 		},
 	}, nil
 }

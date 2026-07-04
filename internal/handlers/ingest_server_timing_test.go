@@ -20,8 +20,10 @@ func TestIngestPricesExposesServerTimingWithoutChangingJSON(t *testing.T) {
 			Accepted:           1,
 			CurrentRowsTouched: 1,
 			PersistenceTiming: domain.IngestPersistenceTiming{
-				Transaction: 12 * time.Millisecond,
-				Commit:      2 * time.Millisecond,
+				Transaction:         12 * time.Millisecond,
+				Commit:              2 * time.Millisecond,
+				TransactionMeasured: true,
+				CommitMeasured:      true,
 			},
 		}},
 		testAuthenticator(t, "secret"),
@@ -65,8 +67,10 @@ func TestIngestHistoryExposesServerTimingWithoutChangingJSON(t *testing.T) {
 			AcceptedBuckets:    2,
 			HistoryRowsTouched: 2,
 			PersistenceTiming: domain.IngestPersistenceTiming{
-				Transaction: 20 * time.Millisecond,
-				Commit:      3 * time.Millisecond,
+				Transaction:         20 * time.Millisecond,
+				Commit:              3 * time.Millisecond,
+				TransactionMeasured: true,
+				CommitMeasured:      true,
 			},
 		}},
 		testAuthenticator(t, "secret"),
@@ -98,5 +102,50 @@ func TestIngestHistoryExposesServerTimingWithoutChangingJSON(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(response.Body.String()), "timing") {
 		t.Fatalf("internal timing leaked into JSON: %s", response.Body.String())
+	}
+}
+
+func TestIngestServerTimingIncludesMeasuredZeroDurations(t *testing.T) {
+	t.Parallel()
+
+	header := make(http.Header)
+
+	setIngestServerTiming(
+		header,
+		time.Now(),
+		domain.IngestPersistenceTiming{
+			TransactionMeasured: true,
+			CommitMeasured:      true,
+		},
+	)
+
+	serverTiming := header.Get("Server-Timing")
+	for _, expected := range []string{
+		"postgres-tx;dur=0.000",
+		"postgres-commit;dur=0.000",
+	} {
+		if !strings.Contains(serverTiming, expected) {
+			t.Fatalf("Server-Timing = %q, want %q", serverTiming, expected)
+		}
+	}
+}
+
+func TestIngestServerTimingOmitsUnmeasuredPersistenceDurations(t *testing.T) {
+	t.Parallel()
+
+	header := make(http.Header)
+
+	setIngestServerTiming(
+		header,
+		time.Now(),
+		domain.IngestPersistenceTiming{},
+	)
+
+	serverTiming := header.Get("Server-Timing")
+	if strings.Contains(serverTiming, "postgres-tx") {
+		t.Fatalf("Server-Timing = %q, unexpected postgres-tx", serverTiming)
+	}
+	if strings.Contains(serverTiming, "postgres-commit") {
+		t.Fatalf("Server-Timing = %q, unexpected postgres-commit", serverTiming)
 	}
 }
