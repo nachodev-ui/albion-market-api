@@ -61,11 +61,11 @@ func countHistoryBuckets(entries []domain.HistoryIngest) int {
 }
 
 type rawHistoryCopySource struct {
-	entries                             []domain.HistoryIngest
-	entryIndex, bucketIndex             int
-	currentEntry, currentBucket         int
-	positioned                          bool
-	values                              [9]any
+	entries                     []domain.HistoryIngest
+	entryIndex, bucketIndex     int
+	currentEntry, currentBucket int
+	positioned                  bool
+	values                      [9]any
 }
 
 func newRawHistoryCopySource(requestID pgtype.UUID, serverID int16, entries []domain.HistoryIngest) *rawHistoryCopySource {
