@@ -74,7 +74,9 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	registerTag, err := tx.Exec(ctx, registerPriceIngestRequestSQL, requestUUID, requestHash, serverID, len(req.Entries))
-	if err != nil { return domain.IngestPricesResult{}, fmt.Errorf("register ingest request: %w", err) }
+	if err != nil {
+		return domain.IngestPricesResult{}, fmt.Errorf("register ingest request: %w", err)
+	}
 	if registerTag.RowsAffected() == 0 {
 		result, err := r.existingIngestResult(ctx, tx, requestUUID, requestHash)
 		if err != nil { return domain.IngestPricesResult{}, err }
