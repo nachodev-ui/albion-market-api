@@ -96,7 +96,9 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 	upsertStarted := time.Now()
 	tag, err := tx.Exec(ctx, upsertCurrentPricesSQL, requestUUID)
 	r.observeDatabase("upsert_current_prices", upsertStarted, err)
-	if err != nil { return domain.IngestPricesResult{}, fmt.Errorf("upsert current prices: %w", err) }
+	if err != nil {
+		return domain.IngestPricesResult{}, fmt.Errorf("upsert current prices: %w", err)
+	}
 	if _, err := tx.Exec(ctx, completePriceIngestRequestSQL, requestUUID, tag.RowsAffected()); err != nil {
 		return domain.IngestPricesResult{}, fmt.Errorf("complete ingest request: %w", err)
 	}
