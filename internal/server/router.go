@@ -21,8 +21,8 @@ func NewRouter(
 	mux.HandleFunc("/healthz", healthHandler.Healthz)
 	mux.HandleFunc("/readyz", healthHandler.Readyz)
 	mux.HandleFunc("/metrics", metricsHandler.Metrics)
-	mux.Handle("/api/v1/ingest/prices", withIngestPhaseTiming("prices", http.HandlerFunc(ingestHandler.IngestPrices)))
-	mux.Handle("/api/v1/ingest/history", withIngestPhaseTiming("history", http.HandlerFunc(ingestHandler.IngestHistory)))
+	mux.HandleFunc("/api/v1/ingest/prices", ingestHandler.IngestPrices)
+	mux.HandleFunc("/api/v1/ingest/history", ingestHandler.IngestHistory)
 	mux.HandleFunc("/api/v1/markets", pricesHandler.ListMarkets)
 	mux.HandleFunc("/api/v1/prices", pricesHandler.GetCurrentPrices)
 	mux.HandleFunc("/api/v1/prices/query", pricesHandler.QueryCurrentPrices)
@@ -31,6 +31,7 @@ func NewRouter(
 	mux.HandleFunc("/api/v1/status", statusHandler.Status)
 
 	var handler http.Handler = mux
+	handler = withIngestPhaseTimingRoutes(handler)
 	if security.RateLimit.Enabled {
 		handler = withRateLimit(handler, newIPRateLimiter(security.RateLimit))
 	}
