@@ -79,7 +79,9 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 	}
 	if registerTag.RowsAffected() == 0 {
 		result, err := r.existingIngestResult(ctx, tx, requestUUID, requestHash)
-		if err != nil { return domain.IngestPricesResult{}, err }
+		if err != nil {
+			return domain.IngestPricesResult{}, err
+		}
 		return result, nil
 	}
 
@@ -87,7 +89,9 @@ func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.Inges
 	copiedRows, err := tx.CopyFrom(ctx, marketIngestRawTable, marketIngestRawColumns, newRawPriceCopySource(requestUUID, serverID, req.Entries))
 	if err == nil && copiedRows != int64(len(req.Entries)) { err = fmt.Errorf("copied %d rows, expected %d", copiedRows, len(req.Entries)) }
 	r.observeDatabase("copy_raw_prices", copyStarted, err)
-	if err != nil { return domain.IngestPricesResult{}, fmt.Errorf("copy raw market prices: %w", err) }
+	if err != nil {
+		return domain.IngestPricesResult{}, fmt.Errorf("copy raw market prices: %w", err)
+	}
 
 	upsertStarted := time.Now()
 	tag, err := tx.Exec(ctx, upsertCurrentPricesSQL, requestUUID)
