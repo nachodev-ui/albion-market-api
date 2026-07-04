@@ -28,8 +28,10 @@ type PriceIngest struct {
 }
 
 type IngestPersistenceTiming struct {
-	Transaction time.Duration
-	Commit      time.Duration
+	Transaction         time.Duration
+	Commit              time.Duration
+	TransactionMeasured bool
+	CommitMeasured      bool
 }
 
 type IngestPricesResponse struct {
