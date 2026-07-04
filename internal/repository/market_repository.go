@@ -30,7 +30,9 @@ type PgxMarketRepository struct {
 
 func NewMarketRepository(db *pgxpool.Pool, metrics ...*observability.DatabaseMetrics) *PgxMarketRepository {
 	var databaseMetrics *observability.DatabaseMetrics
-	if len(metrics) > 0 { databaseMetrics = metrics[0] }
+	if len(metrics) > 0 {
+		databaseMetrics = metrics[0]
+	}
 	return &PgxMarketRepository{db: db, metrics: databaseMetrics}
 }
 
@@ -41,7 +43,9 @@ func (r *PgxMarketRepository) Ping(ctx context.Context) (err error) {
 }
 
 func (r *PgxMarketRepository) observeDatabase(operation string, started time.Time, err error) {
-	if r.metrics != nil { r.metrics.Observe(operation, time.Since(started), err) }
+	if r.metrics != nil {
+		r.metrics.Observe(operation, time.Since(started), err)
+	}
 }
 
 func (r *PgxMarketRepository) IngestPrices(ctx context.Context, req domain.IngestPricesRequest) (result domain.IngestPricesResult, err error) {
