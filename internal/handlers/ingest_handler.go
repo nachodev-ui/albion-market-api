@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -229,7 +230,40 @@ func (h *IngestHandler) IngestPrices(w http.ResponseWriter, r *http.Request) {
 	duplicate = resp.Duplicate
 	errorKind = ""
 	errorDetail = ""
+	setIngestServerTiming(w.Header(), startedAt, resp.PersistenceTiming)
 	writeJSON(w, statusCode, resp)
+}
+
+func setIngestServerTiming(
+	header http.Header,
+	startedAt time.Time,
+	timing domain.IngestPersistenceTiming,
+) {
+	values := []string{
+		fmt.Sprintf("api;dur=%.3f", durationMilliseconds(time.Since(startedAt))),
+	}
+
+	if timing.Transaction > 0 {
+		values = append(
+			values,
+			fmt.Sprintf(
+				"postgres-tx;dur=%.3f",
+				durationMilliseconds(timing.Transaction),
+			),
+		)
+	}
+
+	if timing.Commit > 0 {
+		values = append(
+			values,
+			fmt.Sprintf(
+				"postgres-commit;dur=%.3f",
+				durationMilliseconds(timing.Commit),
+			),
+		)
+	}
+
+	header.Set("Server-Timing", strings.Join(values, ", "))
 }
 
 type ingestErrorResponse struct {

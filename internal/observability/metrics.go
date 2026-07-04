@@ -521,6 +521,10 @@ func (e *PrometheusExporter) writeDatabase(ctx context.Context, writer io.Writer
 		"transaction_prices":  "prices",
 		"transaction_history": "history",
 	})
+	writeMappedDatabaseHistogram(writer, "albion_market_api_database_commit_duration_seconds", "Database commit duration by ingest stream.", snapshot.Durations, map[string]string{
+		"commit_prices":  "prices",
+		"commit_history": "history",
+	})
 }
 
 func writeMappedDatabaseHistogram(writer io.Writer, name, help string, durations map[string]durationHistogram, operations map[string]string) {
@@ -746,6 +750,8 @@ func normalizeDatabaseOperation(operation string) string {
 	switch strings.TrimSpace(operation) {
 	case "copy_raw_history",
 		"copy_raw_prices",
+		"commit_history",
+		"commit_prices",
 		"ingest_history",
 		"ingest_prices",
 		"ping",
