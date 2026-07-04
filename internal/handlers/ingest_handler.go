@@ -243,7 +243,7 @@ func setIngestServerTiming(
 		fmt.Sprintf("api;dur=%.3f", durationMilliseconds(time.Since(startedAt))),
 	}
 
-	if timing.Transaction > 0 {
+	if timing.TransactionMeasured {
 		values = append(
 			values,
 			fmt.Sprintf(
@@ -253,7 +253,7 @@ func setIngestServerTiming(
 		)
 	}
 
-	if timing.Commit > 0 {
+	if timing.CommitMeasured {
 		values = append(
 			values,
 			fmt.Sprintf(
