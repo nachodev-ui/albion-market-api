@@ -1,0 +1,65 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy API to Fly.io
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate local Fly contract
+        run: python3 ./scripts/validate-fly-config.py
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+
+      - name: Validate Fly platform configuration
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl config validate --strict --config fly.toml
+
+      - name: Deploy immutable revision
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          flyctl deploy \
+            --remote-only \
+            --build-arg "VERSION=${GITHUB_SHA::12}" \
+            --build-arg "REVISION=${GITHUB_SHA}" \
+            --build-arg "CREATED=${created_at}"
+
+      - name: Verify production health
+        shell: bash
+        run: |
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --retry 12 \
+            --retry-all-errors \
+            --retry-delay 5 \
+            https://albion-market-api-nachodev.fly.dev/healthz
+
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --retry 12 \
+            --retry-all-errors \
+            --retry-delay 5 \
+            https://albion-market-api-nachodev.fly.dev/readyz

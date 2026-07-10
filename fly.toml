@@ -1,0 +1,57 @@
+app = "albion-market-api-nachodev"
+primary_region = "gru"
+kill_signal = "SIGTERM"
+kill_timeout = 15
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  release_command = "/usr/local/bin/migrate"
+  release_command_timeout = "10m"
+  strategy = "rolling"
+  wait_timeout = "10m"
+
+[env]
+  APP_ENV = "production"
+  CORS_ALLOWED_ORIGINS = "https://albion-production-calculator.pages.dev"
+  HTTP_ADDR = ":8080"
+  INGEST_BEARER_TOKEN_ID = "receiver-production-2026-07"
+  INGEST_REQUIRE_HTTPS = "true"
+  LOAD_DOTENV = "false"
+  LOG_COLOR = "never"
+  LOG_FORMAT = "json"
+  RATE_LIMIT_BURST = "80"
+  RATE_LIMIT_CLIENT_TTL = "10m"
+  RATE_LIMIT_ENABLED = "true"
+  RATE_LIMIT_REQUESTS_PER_SECOND = "40"
+  TRUST_PROXY_HEADERS = "true"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 200
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    method = "GET"
+    path = "/readyz"
+    protocol = "http"
+    timeout = "5s"
+
+    [http_service.checks.headers]
+      X-Forwarded-Proto = "https"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

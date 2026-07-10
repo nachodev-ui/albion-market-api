@@ -68,7 +68,8 @@ export default defineConfig({
       {
         text: 'Despliegue',
         items: [
-          { text: 'Contenedores seguros', link: '/deployment/' }
+          { text: 'Contenedores seguros', link: '/deployment/' },
+          { text: 'Fly.io + Neon', link: '/deployment/fly-neon-production' }
         ]
       },
       {
