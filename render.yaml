@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: albion-market-api
+    runtime: docker
+    plan: free
+    repo: https://github.com/nachodev-ui/albion-market-api
+    branch: main
+    autoDeployTrigger: off
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: /usr/local/bin/albion-market-api
+    healthCheckPath: /readyz
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: HTTP_ADDR
+        value: :8080
+      - key: LOAD_DOTENV
+        value: "false"
+      - key: LOG_COLOR
+        value: never
+      - key: LOG_FORMAT
+        value: json
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://albion-production-calculator.pages.dev
+      - key: INGEST_BEARER_TOKEN_ID
+        value: receiver-production-2026-07
+      - key: INGEST_REQUIRE_HTTPS
+        value: "true"
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: RATE_LIMIT_REQUESTS_PER_SECOND
+        value: "40"
+      - key: RATE_LIMIT_BURST
+        value: "80"
+      - key: RATE_LIMIT_CLIENT_TTL
+        value: 10m
+      - key: DATABASE_URL
+        sync: false
+      - key: INGEST_BEARER_TOKEN
+        sync: false
