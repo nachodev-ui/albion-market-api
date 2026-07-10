@@ -13,12 +13,20 @@ if ([string]::IsNullOrWhiteSpace($resolvedParent)) {
 
 New-Item -ItemType Directory -Path $resolvedParent -Force | Out-Null
 
-$bytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
+$bytes = New-Object byte[] 48
+$randomNumberGenerator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try {
+    $randomNumberGenerator.GetBytes($bytes)
+}
+finally {
+    $randomNumberGenerator.Dispose()
+}
+
 $token = [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
 
 Set-Content -LiteralPath $OutputPath -Value $token -NoNewline -Encoding utf8
 
-if ($IsWindows -or $env:OS -eq "Windows_NT") {
+if ($env:OS -eq "Windows_NT") {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
     & icacls.exe $OutputPath /inheritance:r /grant:r "${identity}:F" | Out-Null
     if ($LASTEXITCODE -ne 0) {
