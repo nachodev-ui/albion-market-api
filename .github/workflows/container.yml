@@ -88,7 +88,7 @@ jobs:
         run: |
           mkdir -p artifacts
           set +e
-          flyctl config show --local > artifacts/fly-config-validation.log 2>&1
+          flyctl config validate --strict --config fly.toml > artifacts/fly-config-validation.log 2>&1
           status=$?
           cat artifacts/fly-config-validation.log
           exit "$status"
