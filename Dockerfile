@@ -25,7 +25,10 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
       -o /out/albion-market-api ./cmd/api && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false -ldflags='-s -w' \
-      -o /out/healthcheck ./cmd/healthcheck
+      -o /out/healthcheck ./cmd/healthcheck && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -buildvcs=false -ldflags='-s -w' \
+      -o /out/migrate ./cmd/migrate
 
 FROM scratch AS runtime
 
@@ -44,6 +47,8 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifi
 COPY --from=builder /usr/share/zoneinfo/UTC /usr/share/zoneinfo/UTC
 COPY --from=builder /out/albion-market-api /usr/local/bin/albion-market-api
 COPY --from=builder /out/healthcheck /usr/local/bin/healthcheck
+COPY --from=builder /out/migrate /usr/local/bin/migrate
+COPY migrations /migrations
 
 ENV APP_ENV=production \
     HTTP_ADDR=:8080 \
@@ -60,4 +65,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD ["/usr/local/bin/healthcheck"]
 
-ENTRYPOINT ["/usr/local/bin/albion-market-api"]
+CMD ["/usr/local/bin/albion-market-api"]
