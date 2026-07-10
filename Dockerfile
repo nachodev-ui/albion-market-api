@@ -6,8 +6,12 @@ WORKDIR /src
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
-ARG VERSION=dev
-ARG REVISION=unknown
+# Render exposes RENDER_GIT_COMMIT to Docker builds. Explicit VERSION,
+# REVISION and CREATED arguments from release workflows take precedence.
+ARG RENDER_GIT_COMMIT=unknown
+ARG VERSION=
+ARG REVISION=
+ARG CREATED=
 
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -19,16 +23,31 @@ COPY internal ./internal
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    set -eu; \
+    resolved_revision="${REVISION:-${RENDER_GIT_COMMIT}}"; \
+    if [ -z "${resolved_revision}" ]; then resolved_revision="unknown"; fi; \
+    resolved_version="${VERSION}"; \
+    if [ -z "${resolved_version}" ]; then \
+      if [ "${resolved_revision}" = "unknown" ]; then \
+        resolved_version="dev"; \
+      else \
+        resolved_version="$(printf '%s' "${resolved_revision}" | cut -c1-12)"; \
+      fi; \
+    fi; \
+    resolved_created="${CREATED:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"; \
+    printf '{"version":"%s","revision":"%s","created":"%s"}\n' \
+      "${resolved_version}" "${resolved_revision}" "${resolved_created}" \
+      > /out-build-metadata.json; \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false \
-      -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION}" \
-      -o /out/albion-market-api ./cmd/api && \
+      -ldflags="-s -w -X main.version=${resolved_version} -X main.revision=${resolved_revision} -X main.created=${resolved_created}" \
+      -o /out-albion-market-api ./cmd/api; \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false -ldflags='-s -w' \
-      -o /out/healthcheck ./cmd/healthcheck && \
+      -o /out-healthcheck ./cmd/healthcheck; \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false -ldflags='-s -w' \
-      -o /out/migrate ./cmd/migrate
+      -o /out-migrate ./cmd/migrate
 
 FROM scratch AS runtime
 
@@ -45,9 +64,10 @@ LABEL org.opencontainers.image.title="Albion Market API" \
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /usr/share/zoneinfo/UTC /usr/share/zoneinfo/UTC
-COPY --from=builder /out/albion-market-api /usr/local/bin/albion-market-api
-COPY --from=builder /out/healthcheck /usr/local/bin/healthcheck
-COPY --from=builder /out/migrate /usr/local/bin/migrate
+COPY --from=builder /out-albion-market-api /usr/local/bin/albion-market-api
+COPY --from=builder /out-healthcheck /usr/local/bin/healthcheck
+COPY --from=builder /out-migrate /usr/local/bin/migrate
+COPY --from=builder /out-build-metadata.json /usr/local/share/albion-market-api/build-metadata.json
 COPY migrations /migrations
 
 ENV APP_ENV=production \

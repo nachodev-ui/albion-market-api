@@ -25,7 +25,9 @@ func TestContainerWorkflowBlocksFixableHighAndCriticalVulnerabilities(t *testing
 	required := []string{
 		"workflow_dispatch:",
 		"Build production image for vulnerability scan",
-		"docker build --tag \"$SCAN_IMAGE\" .",
+		"docker build \\",
+		"--build-arg \"RENDER_GIT_COMMIT=${GITHUB_SHA}\"",
+		"--tag \"$SCAN_IMAGE\"",
 		"image-ref: ${{ env.SCAN_IMAGE }}",
 		"scan-type: image",
 		"scanners: vuln",

@@ -25,6 +25,7 @@ const serviceName = "albion-market-api"
 var (
 	version  = "dev"
 	revision = "unknown"
+	created  = "unknown"
 )
 
 func main() {
@@ -181,6 +182,7 @@ func main() {
 			observability.F("log_format", cfg.LogFormat),
 			observability.F("version", version),
 			observability.F("revision", revision),
+			observability.F("created", created),
 		)
 		serverErrors <- srv.ListenAndServe()
 	}()

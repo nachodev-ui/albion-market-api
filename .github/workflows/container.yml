@@ -13,13 +13,12 @@ on:
       - .gitignore
       - cmd/**
       - deploy/**
-      - fly.toml
+      - render.yaml
       - internal/**
       - migrations/**
-      - scripts/bootstrap-fly-production.ps1
       - scripts/initialize-deployment.ps1
       - scripts/new-production-ingest-token.ps1
-      - scripts/validate-fly-config.py
+      - scripts/validate-render-config.py
       - scripts/test-container.ps1
       - scripts/test-deployment-compose.ps1
       - scripts/test-observability-compose.ps1
@@ -42,13 +41,12 @@ on:
       - .gitignore
       - cmd/**
       - deploy/**
-      - fly.toml
+      - render.yaml
       - internal/**
       - migrations/**
-      - scripts/bootstrap-fly-production.ps1
       - scripts/initialize-deployment.ps1
       - scripts/new-production-ingest-token.ps1
-      - scripts/validate-fly-config.py
+      - scripts/validate-render-config.py
       - scripts/test-container.ps1
       - scripts/test-deployment-compose.ps1
       - scripts/test-observability-compose.ps1
@@ -82,8 +80,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Validate Fly configuration contract
-        run: python3 ./scripts/validate-fly-config.py
+      - name: Validate Render configuration contract
+        run: python3 ./scripts/validate-render-config.py
 
       - name: Verify deployment contracts
         run: go test ./internal/config ./internal/deployment
@@ -94,7 +92,11 @@ jobs:
           docker compose version
 
       - name: Build production image for vulnerability scan
-        run: docker build --tag "$SCAN_IMAGE" .
+        run: |
+          docker build \
+            --build-arg "RENDER_GIT_COMMIT=${GITHUB_SHA}" \
+            --tag "$SCAN_IMAGE" \
+            .
 
       - name: Scan production image for high and critical vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

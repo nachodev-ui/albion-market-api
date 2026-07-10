@@ -16,35 +16,39 @@ Albion Data Client
 receiver local / forwarder
         │ HTTPS + Bearer
         ▼
-albion-market-api ─────► PostgreSQL
+albion-market-api en Render ─────► Neon PostgreSQL
         │
         ▼
-albion-production-calculator
+albion-production-calculator en Cloudflare Pages
 ```
 
 ## Producción hosted-first
 
-La topología pública recomendada es:
-
 ```text
 Cloudflare Pages global
-  → Fly.io São Paulo (gru)
+  → Render HTTPS
   → Neon PostgreSQL AWS São Paulo (aws-sa-east-1)
 ```
 
-Dominios configurados:
+Dominios canónicos:
 
 ```text
 Frontend: https://albion-production-calculator.pages.dev
-API:      https://albion-market-api-nachodev.fly.dev
-API v1:   https://albion-market-api-nachodev.fly.dev/api/v1
+API:      https://albion-market-api.onrender.com
+API v1:   https://albion-market-api.onrender.com/api/v1
 ```
 
 El frontend público no necesita receiver local. El receiver es una herramienta
-separada para colaboradores y entrega datos directamente a la API autenticada.
+separada para colaboradores y entrega datos a la API autenticada.
 
-La guía completa está en
-[`docs/deployment/fly-neon-production.md`](docs/deployment/fly-neon-production.md).
+La configuración declarativa vive en [`render.yaml`](render.yaml). Los despliegues
+automáticos están desactivados: el workflow manual de producción ejecuta primero
+las migraciones de Neon, despliega una revisión exacta en Render y después valida
+health, readiness, CORS, autenticación sin escritura, precios, historial y el
+frontend de Cloudflare.
+
+Consulta la guía completa en
+[`docs/deployment/render-neon-production.md`](docs/deployment/render-neon-production.md).
 
 ## Documentación
 
@@ -89,22 +93,30 @@ Invoke-RestMethod http://127.0.0.1:8080/readyz
 (Invoke-WebRequest http://127.0.0.1:8080/metrics).Content
 ```
 
-## Primer despliegue público
+## Producción en Render
 
-Después de crear PostgreSQL en Neon y guardar su URL directa en un archivo local
-ignorado por Git:
+El servicio existente debe coincidir con `render.yaml` y mantener
+`autoDeployTrigger: off`. El GitHub Environment `production` requiere aprobación
+y contiene:
 
-```powershell
-.\scripts\new-production-ingest-token.ps1
-.\scripts\bootstrap-fly-production.ps1
+```text
+NEON_MIGRATION_DATABASE_URL
+RENDER_DEPLOY_HOOK_URL
 ```
 
-El bootstrap crea la aplicación Fly.io, importa `DATABASE_URL` e
-`INGEST_BEARER_TOKEN` al vault cifrado, ejecuta las migraciones de release y
-comprueba `/healthz` y `/readyz`.
+La primera es la conexión **directa** a la base `albion_market`; la segunda es el
+deploy hook secreto del servicio Render. Los secretos de runtime `DATABASE_URL` e
+`INGEST_BEARER_TOKEN` permanecen en Render.
 
-GitHub Actions usa únicamente `FLY_API_TOKEN` dentro del Environment
-`production`. Los secretos de base de datos e ingesta no se duplican en GitHub.
+Para desplegar, abre **Actions → Deploy production to Render**, selecciona `main`
+y escribe `DEPLOY`. El workflow:
+
+1. construye la revisión con `VERSION`, `REVISION` y `CREATED`;
+2. aplica migraciones con advisory lock;
+3. detiene el proceso si Neon falla;
+4. dispara Render para el SHA exacto;
+5. espera ese SHA en `albion_market_api_build_info`;
+6. ejecuta todas las verificaciones públicas y de seguridad.
 
 ## Despliegue local reproducible
 
@@ -128,9 +140,6 @@ Los tags estables `vMAJOR.MINOR.PATCH` creados desde el `main` vigente publican
 una imagen OCI en GitHub Container Registry y un GitHub Release con SBOM SPDX,
 checksums, firma Cosign keyless y attestations de provenance/SBOM.
 
-En producción debe fijarse el digest inmutable cuando se despliega una imagen
-publicada externamente:
-
 ```text
 ghcr.io/nachodev-ui/albion-market-api@sha256:<digest>
 ```
@@ -141,7 +150,7 @@ ghcr.io/nachodev-ui/albion-market-api@sha256:<digest>
 |---|---|---|
 | `GET` | `/healthz` | Liveness del proceso |
 | `GET` | `/readyz` | Readiness del pool, PostgreSQL y esquema |
-| `GET` | `/metrics` | Métricas Prometheus |
+| `GET` | `/metrics` | Métricas Prometheus y build info |
 | `GET` | `/api/v1/status` | Estado operativo y métricas |
 | `GET` | `/api/v1/markets` | Catálogo público de mercados |
 | `GET` | `/api/v1/prices` | Consulta simple de precios |
@@ -161,6 +170,7 @@ go build ./cmd/migrate
 npm ci
 npm run contracts:check
 npm run docs:dev
+python .\scripts\validate-render-config.py
 .\scripts\test-container.ps1
 .\scripts\test-deployment-compose.ps1
 .\scripts\test-observability-compose.ps1

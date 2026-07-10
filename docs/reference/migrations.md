@@ -1,6 +1,7 @@
 # Migraciones
 
-Las migraciones se encuentran exclusivamente en `migrations/` y se ejecutan en orden lexicográfico.
+Las migraciones se encuentran exclusivamente en `migrations/` y se ejecutan en
+orden lexicográfico.
 
 | Archivo | Propósito |
 |---|---|
@@ -24,12 +25,42 @@ Get-ChildItem .\migrations\*.sql |
     }
 ```
 
+## Runner compilado
+
+La imagen contiene `/usr/local/bin/migrate`. El runner usa una conexión directa,
+adquiere un advisory lock de sesión, aplica cada archivo dentro de una transacción
+y termina con error ante la primera migración fallida.
+
+```powershell
+docker run --rm `
+  --env "DATABASE_URL=$env:NEON_MIGRATION_DATABASE_URL" `
+  albion-market-api:local `
+  /usr/local/bin/migrate
+```
+
+## Producción en Render
+
+El workflow `Deploy production to Render` ejecuta el runner **antes** de invocar
+el deploy hook. La URL directa de Neon vive en el GitHub Environment protegido
+`production` bajo `NEON_MIGRATION_DATABASE_URL`.
+
+El orden no puede invertirse:
+
+1. construir la revisión exacta;
+2. aplicar y validar migraciones;
+3. detener el job ante cualquier error;
+4. desplegar esa misma revisión en Render;
+5. esperar el SHA en `albion_market_api_build_info`;
+6. comprobar `/readyz`.
+
+Render mantiene `autoDeployTrigger: off` para impedir que un push reemplace la
+instancia antes de ejecutar las migraciones.
+
 ## Aplicación mediante Docker Compose
 
 `deploy/compose.yaml` ejecuta un servicio de una sola ejecución llamado `migrate`.
-Este espera a que PostgreSQL esté saludable, aplica los archivos en orden
-lexicográfico con `ON_ERROR_STOP=1` y debe terminar con código `0` antes de que
-la API pueda arrancar.
+Espera PostgreSQL, aplica los archivos en orden y debe terminar con código `0`
+antes de que la API pueda arrancar.
 
 ```powershell
 docker compose `
@@ -38,13 +69,13 @@ docker compose `
   up --build --detach
 ```
 
-Una migración fallida bloquea el inicio de la API.
-
 ## Regla de mantenimiento
 
 - no reescribir una migración publicada;
-- agregar una nueva migración para cada cambio de esquema;
-- mantener `migrations/` libre de código, documentación y artefactos;
+- agregar una migración para cada cambio de esquema;
+- mantener `migrations/` libre de código y documentación;
+- diseñar cambios compatibles con la versión activa;
+- separar cualquier eliminación destructiva en una fase posterior;
 - validar restauraciones aplicando también las migraciones actuales.
 
 ## Readiness del esquema
