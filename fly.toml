@@ -1,7 +1,7 @@
 app = "albion-market-api-nachodev"
 primary_region = "gru"
 kill_signal = "SIGTERM"
-kill_timeout = "15s"
+kill_timeout = 15
 
 [build]
   dockerfile = "Dockerfile"
