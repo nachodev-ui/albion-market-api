@@ -13,9 +13,12 @@ on:
       - .gitignore
       - cmd/**
       - deploy/**
+      - fly.toml
       - internal/**
       - migrations/**
+      - scripts/bootstrap-fly-production.ps1
       - scripts/initialize-deployment.ps1
+      - scripts/new-production-ingest-token.ps1
       - scripts/test-container.ps1
       - scripts/test-deployment-compose.ps1
       - scripts/test-observability-compose.ps1
@@ -23,6 +26,7 @@ on:
       - go.mod
       - go.sum
       - .github/workflows/container.yml
+      - .github/workflows/deploy-production.yml
       - .github/workflows/release.yml
       - .github/workflows/release-request.yml
       - .github/dependabot.yml
@@ -37,9 +41,12 @@ on:
       - .gitignore
       - cmd/**
       - deploy/**
+      - fly.toml
       - internal/**
       - migrations/**
+      - scripts/bootstrap-fly-production.ps1
       - scripts/initialize-deployment.ps1
+      - scripts/new-production-ingest-token.ps1
       - scripts/test-container.ps1
       - scripts/test-deployment-compose.ps1
       - scripts/test-observability-compose.ps1
@@ -47,6 +54,7 @@ on:
       - go.mod
       - go.sum
       - .github/workflows/container.yml
+      - .github/workflows/deploy-production.yml
       - .github/workflows/release.yml
       - .github/workflows/release-request.yml
       - .github/dependabot.yml
@@ -71,6 +79,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Validate Fly configuration
+        run: flyctl config show --local >/dev/null
 
       - name: Verify deployment contracts
         run: go test ./internal/config ./internal/deployment
