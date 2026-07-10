@@ -1,6 +1,8 @@
 # Scripts operativos
 
-Los scripts PowerShell resuelven la conexión desde un parámetro explícito, variables de entorno o `.env.local`, según su responsabilidad. Nunca confirmes credenciales ni archivos temporales generados.
+Los scripts PowerShell resuelven la conexión desde un parámetro explícito,
+variables de entorno o `.env.local`, según su responsabilidad. Nunca confirmes
+credenciales ni archivos temporales generados.
 
 ## Auditoría e índices
 
@@ -29,16 +31,19 @@ Los scripts PowerShell resuelven la conexión desde un parámetro explícito, va
 | `test-postgres-backup-restore.ps1` | Prueba integral de backup y restauración |
 | `postgres-client.ps1` | Utilidades seguras de conexión para herramientas PostgreSQL |
 
-## Contenedores
+## Despliegue y contenedores
 
 | Script | Propósito |
 |---|---|
+| `validate-render-config.py` | Valida `render.yaml`, el workflow y la retirada completa de Fly |
 | `initialize-deployment.ps1` | Genera secretos y configuración local para Docker Compose |
-| `test-container.ps1` | Construye la imagen de producción y ejecuta un smoke test aislado con PostgreSQL |
+| `new-production-ingest-token.ps1` | Genera el token compartido por Render y el receiver |
+| `test-container.ps1` | Construye la imagen de producción y ejecuta un smoke test aislado |
 | `test-deployment-compose.ps1` | Valida PostgreSQL, migraciones, secretos y runtime mediante Compose |
-| `test-observability-compose.ps1` | Valida Prometheus, reglas, Alertmanager, Grafana y dashboard provisionado |
+| `test-observability-compose.ps1` | Valida Prometheus, Alertmanager, Grafana y su dashboard |
 
-Consulta [Despliegue reproducible y seguro](../deployment/) para el contrato de build y runtime.
+Consulta [Despliegue reproducible y seguro](../deployment/) y
+[Producción en Render, Neon y Cloudflare](../deployment/render-neon-production.md).
 
 ## Tareas de Windows
 
@@ -50,4 +55,6 @@ Consulta [Despliegue reproducible y seguro](../deployment/) para el contrato de 
 | `invoke-postgres-backup-task.ps1` | Wrapper del backup diario |
 | `invoke-postgres-restore-verification-task.ps1` | Wrapper de la verificación semanal |
 
-Consulta [retención](../database/retention.md) y [backup/restauración](../database/backup-restore.md) antes de usar modos destructivos.
+Consulta [retención](../database/retention.md) y
+[backup/restauración](../database/backup-restore.md) antes de usar modos
+destructivos.

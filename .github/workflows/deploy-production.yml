@@ -1,65 +1,216 @@
-name: Deploy production
+name: Deploy production to Render
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: Escribe DEPLOY para ejecutar migraciones y desplegar main
+        required: true
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-fly-deploy
+  group: production-render-deploy
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy API to Fly.io
+    name: Migrate Neon and deploy API to Render
+    if: github.ref == 'refs/heads/main' && inputs.confirm == 'DEPLOY'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
+    env:
+      API_URL: https://albion-market-api.onrender.com
+      FRONTEND_ORIGIN: https://albion-production-calculator.pages.dev
+      MIGRATION_IMAGE: albion-market-api:production-migration-${{ github.sha }}
 
     steps:
-      - name: Checkout
+      - name: Checkout production revision
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Validate local Fly contract
-        run: python3 ./scripts/validate-fly-config.py
+      - name: Validate Render repository contract
+        run: python3 ./scripts/validate-render-config.py
 
-      - name: Set up flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
-
-      - name: Validate Fly platform configuration
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl config validate --strict --config fly.toml
-
-      - name: Deploy immutable revision
-        shell: bash
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          flyctl deploy \
-            --remote-only \
-            --build-arg "VERSION=${GITHUB_SHA::12}" \
-            --build-arg "REVISION=${GITHUB_SHA}" \
-            --build-arg "CREATED=${created_at}"
-
-      - name: Verify production health
+      - name: Derive immutable build metadata
+        id: metadata
         shell: bash
         run: |
+          set -euo pipefail
+          revision="$(git rev-parse HEAD)"
+          version="$(git rev-parse --short=12 HEAD)"
+          created="$(git show -s --format=%cI HEAD)"
+          {
+            echo "revision=${revision}"
+            echo "version=${version}"
+            echo "created=${created}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build the exact migration image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --build-arg "VERSION=${{ steps.metadata.outputs.version }}" \
+            --build-arg "REVISION=${{ steps.metadata.outputs.revision }}" \
+            --build-arg "CREATED=${{ steps.metadata.outputs.created }}" \
+            --tag "${MIGRATION_IMAGE}" \
+            .
+
+      - name: Apply and validate Neon migrations before deploy
+        env:
+          NEON_MIGRATION_DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${NEON_MIGRATION_DATABASE_URL}" ]]; then
+            echo "NEON_MIGRATION_DATABASE_URL is required in the production Environment." >&2
+            exit 1
+          fi
+          docker run --rm \
+            --env "DATABASE_URL=${NEON_MIGRATION_DATABASE_URL}" \
+            "${MIGRATION_IMAGE}" \
+            /usr/local/bin/migrate
+
+      - name: Trigger the exact revision on Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${RENDER_DEPLOY_HOOK_URL}" ]]; then
+            echo "RENDER_DEPLOY_HOOK_URL is required in the production Environment." >&2
+            exit 1
+          fi
+          separator="?"
+          if [[ "${RENDER_DEPLOY_HOOK_URL}" == *"?"* ]]; then
+            separator="&"
+          fi
           curl \
             --fail \
             --show-error \
             --silent \
-            --retry 12 \
-            --retry-all-errors \
-            --retry-delay 5 \
-            https://albion-market-api-nachodev.fly.dev/healthz
+            --request POST \
+            "${RENDER_DEPLOY_HOOK_URL}${separator}ref=${{ steps.metadata.outputs.revision }}" \
+            > render-deploy-response.json
+          jq -e . render-deploy-response.json > /dev/null
+
+      - name: Wait for Render to serve the exact revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="${{ steps.metadata.outputs.revision }}"
+          for attempt in $(seq 1 90); do
+            metrics="$(curl --fail --silent --show-error --max-time 10 "${API_URL}/metrics" 2>/dev/null || true)"
+            if grep -Eq "albion_market_api_build_info\\{[^}]*revision=\"${expected_revision}\"" <<< "${metrics}"; then
+              echo "Render is serving revision ${expected_revision}."
+              exit 0
+            fi
+            echo "Attempt ${attempt}/90: Render has not promoted the expected revision yet."
+            sleep 10
+          done
+          echo "Render did not serve revision ${expected_revision} before the timeout." >&2
+          exit 1
+
+      - name: Verify liveness and readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent "${API_URL}/healthz" | jq -e .
+          curl --fail --show-error --silent "${API_URL}/readyz" | jq -e '.status == "ok"'
+
+      - name: Validate Cloudflare CORS preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          status="$({ curl \
+            --silent \
+            --show-error \
+            --output /dev/null \
+            --dump-header "${headers}" \
+            --write-out '%{http_code}' \
+            --request OPTIONS \
+            --header "Origin: ${FRONTEND_ORIGIN}" \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type' \
+            "${API_URL}/api/v1/prices/query"; } | tr -d '\r')"
+          if [[ "${status}" != "200" && "${status}" != "204" ]]; then
+            echo "Unexpected CORS preflight status: ${status}" >&2
+            cat "${headers}" >&2
+            exit 1
+          fi
+          tr -d '\r' < "${headers}" | grep -Fqi "Access-Control-Allow-Origin: ${FRONTEND_ORIGIN}"
+
+      - name: Verify ingest authentication without inserting data
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl \
+            --silent \
+            --show-error \
+            --output ingest-auth-response.json \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Authorization: Bearer deployment-probe-invalid-token' \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "${API_URL}/api/v1/ingest/prices")"
+          if [[ "${status}" != "401" ]]; then
+            echo "Expected 401 from invalid ingest credential, got ${status}." >&2
+            cat ingest-auth-response.json >&2
+            exit 1
+          fi
+          jq -e '.error == "unauthorized"' ingest-auth-response.json > /dev/null
+
+      - name: Verify public prices and history
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl \
+            --fail \
+            --show-error \
+            --silent \
+            --get \
+            --data-urlencode 'server=west' \
+            --data-urlencode 'marketKey=martlock' \
+            --data-urlencode 'itemIds=T4_BAG' \
+            --data-urlencode 'quality=1' \
+            "${API_URL}/api/v1/prices" \
+            | jq -e . > /dev/null
 
           curl \
             --fail \
             --show-error \
             --silent \
-            --retry 12 \
-            --retry-all-errors \
-            --retry-delay 5 \
-            https://albion-market-api-nachodev.fly.dev/readyz
+            --get \
+            --data-urlencode 'server=west' \
+            --data-urlencode 'marketKey=martlock' \
+            --data-urlencode 'itemId=T4_BAG' \
+            --data-urlencode 'quality=1' \
+            --data-urlencode 'period=4-weeks' \
+            "${API_URL}/api/v1/history" \
+            | jq -e . > /dev/null
+
+      - name: Verify Cloudflare frontend availability
+        run: curl --fail --show-error --silent "${FRONTEND_ORIGIN}" > /dev/null
+
+      - name: Publish deployment summary
+        shell: bash
+        run: |
+          {
+            echo "### Render production deployment"
+            echo
+            echo "- Version: \`${{ steps.metadata.outputs.version }}\`"
+            echo "- Revision: \`${{ steps.metadata.outputs.revision }}\`"
+            echo "- Created: \`${{ steps.metadata.outputs.created }}\`"
+            echo "- Neon migrations: completed before deploy"
+            echo "- Render health/readiness: verified"
+            echo "- Cloudflare CORS and frontend: verified"
+            echo "- Public prices/history: verified"
+            echo "- Ingest authentication probe: rejected without writes"
+          } >> "${GITHUB_STEP_SUMMARY}"

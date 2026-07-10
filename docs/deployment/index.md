@@ -1,22 +1,22 @@
 # Despliegue reproducible y seguro
 
-El repositorio mantiene dos rutas de despliegue con el mismo contrato de
-seguridad:
+El repositorio mantiene dos rutas de despliegue:
 
 - **Docker Compose local**, para pruebas integrales y operación autocontenida;
-- **Fly.io + Neon**, para la API HTTPS y PostgreSQL administrado de producción.
+- **Render + Neon**, para la API HTTPS y PostgreSQL administrado de producción.
 
-La guía del entorno público está en [Producción en Fly.io y Neon](./fly-neon-production.md).
+La guía pública canónica está en
+[Producción en Render, Neon y Cloudflare](./render-neon-production.md).
 
 ## Archivos mantenidos
 
 | Archivo | Responsabilidad |
 |---|---|
 | `Dockerfile` | Compila API, healthcheck y runner de migraciones en un runtime `scratch` |
-| `fly.toml` | Región, recursos, HTTPS, readiness y release command de Fly.io |
-| `.github/workflows/deploy-production.yml` | Despliegue manual controlado mediante GitHub Environment |
+| `render.yaml` | Contrato declarativo del servicio, runtime, health check, CORS y secretos |
+| `.github/workflows/deploy-production.yml` | Migración previa, deploy manual y validación integral de producción |
 | `deploy/compose.yaml` | PostgreSQL, migraciones, API y observabilidad para el entorno local |
-| `scripts/bootstrap-fly-production.ps1` | Importa secretos y realiza el primer despliegue público |
+| `scripts/validate-render-config.py` | Rechaza divergencias de Render y dependencias retiradas |
 | `scripts/new-production-ingest-token.ps1` | Genera la credencial de ingesta sin imprimirla |
 | `scripts/initialize-deployment.ps1` | Inicializa secretos y configuración de Compose local |
 | `scripts/test-container.ps1` | Smoke test directo de la imagen |
@@ -34,36 +34,42 @@ La guía del entorno público está en [Producción en Fly.io y Neon](./fly-neon
 - healthcheck mediante un binario Go dedicado;
 - runner de migraciones compilado en Go;
 - SQL de `migrations/` incorporados como archivos de solo lectura;
-- metadatos OCI de versión, revisión y fecha;
+- metadatos de versión, revisión y creación;
 - ningún secreto, documento, paquete Node ni archivo `.env` dentro de la imagen.
 
-La imagen contiene únicamente los artefactos necesarios para ejecutar la API y
-preparar su esquema:
+La imagen contiene:
 
 ```text
 /usr/local/bin/albion-market-api
 /usr/local/bin/healthcheck
 /usr/local/bin/migrate
+/usr/local/share/albion-market-api/build-metadata.json
 /migrations/*.sql
 ```
 
 ## Producción administrada
 
-La arquitectura pública utiliza:
-
 ```text
 Cloudflare Pages
-  → Fly.io São Paulo
+  → Render HTTPS
   → Neon PostgreSQL São Paulo
 ```
 
-Fly.io ejecuta `/usr/local/bin/migrate` antes de cada release. Una migración
-fallida bloquea la sustitución de la instancia activa. El balanceador utiliza
-`/readyz`, por lo que no envía tráfico a una Machine cuyo pool, PostgreSQL o
-esquema requerido no estén disponibles.
+Render mantiene los despliegues automáticos desactivados. El workflow manual del
+GitHub Environment `production` construye la revisión exacta, ejecuta primero el
+runner de migraciones contra Neon y solo después invoca el deploy hook de Render.
 
-Consulta [Producción en Fly.io y Neon](./fly-neon-production.md) para provisionar
-los dominios, secretos y GitHub Environment definitivos.
+El job espera que `/metrics` publique el SHA solicitado y comprueba:
+
+- `/healthz`;
+- `/readyz`;
+- CORS para el dominio Cloudflare;
+- rechazo `401` de una credencial inválida sin persistencia;
+- precios e historial públicos;
+- disponibilidad del frontend.
+
+Consulta [la guía de producción](./render-neon-production.md) para configurar los
+dos secretos de entrega y ejecutar el procedimiento.
 
 ## Docker Compose local
 
@@ -102,13 +108,13 @@ docker compose `
   up --build --detach
 ```
 
-Compose aplica este orden obligatorio:
+Compose aplica este orden:
 
 1. inicia PostgreSQL;
 2. espera su healthcheck;
-3. ejecuta todas las migraciones SQL en orden lexicográfico;
-4. exige que `migrate` termine con código `0`;
-5. solo entonces crea la API.
+3. ejecuta migraciones SQL en orden lexicográfico;
+4. exige código `0`;
+5. crea la API.
 
 ### Comprobaciones
 
@@ -123,38 +129,24 @@ Invoke-RestMethod http://127.0.0.1:18080/readyz
 (Invoke-WebRequest http://127.0.0.1:18080/metrics).Content
 ```
 
-El healthcheck de la imagen usa `/healthz`; los balanceadores y orquestadores
-deben usar `/readyz`.
+El healthcheck de la imagen usa `/healthz`; balanceadores y orquestadores deben
+usar `/readyz`.
 
 ## Secretos
 
-En Compose, los secretos se montan bajo `/run/secrets` y no aparecen en las
-variables del contenedor. En Fly.io, `DATABASE_URL` e `INGEST_BEARER_TOKEN` se
-almacenan en su vault cifrado. GitHub Actions recibe únicamente un deploy token
-limitado a la aplicación.
+En Compose, los secretos se montan bajo `/run/secrets`. En Render,
+`DATABASE_URL` e `INGEST_BEARER_TOKEN` permanecen en el gestor de variables del
+servicio. GitHub solo recibe la URL directa de migración y el deploy hook dentro
+del Environment protegido `production`.
 
 Nunca incorpores secretos a:
 
-- el `Dockerfile`;
-- `fly.toml`;
+- `Dockerfile`;
+- `render.yaml`;
 - workflows;
 - argumentos de build;
 - variables `VITE_*`;
 - issues, pull requests o documentación.
-
-## Endurecimiento del runtime local
-
-`deploy/compose.yaml` aplica:
-
-- usuario `65532:65532`;
-- filesystem raíz de solo lectura;
-- eliminación de capacidades Linux;
-- `no-new-privileges`;
-- límite de procesos;
-- `/tmp` temporal, no ejecutable y limitado;
-- red de PostgreSQL interna;
-- publicación de la API solo en `127.0.0.1`;
-- apagado por `SIGTERM` con 15 segundos de gracia.
 
 ## Observabilidad local
 
@@ -167,11 +159,12 @@ docker compose `
 ```
 
 Sin el perfil se ejecutan PostgreSQL, migraciones y API. Con el perfil se añaden
-Prometheus, Alertmanager y Grafana, publicados únicamente en loopback.
+Prometheus, Alertmanager y Grafana, publicados solo en loopback.
 
 ## Pruebas
 
 ```powershell
+python .\scripts\validate-render-config.py
 .\scripts\test-container.ps1
 .\scripts\test-deployment-compose.ps1
 .\scripts\test-observability-compose.ps1
@@ -201,4 +194,4 @@ docker compose `
   down --volumes
 ```
 
-No uses `--volumes` en un entorno con datos que deban conservarse.
+No uses `--volumes` si los datos deben conservarse.
