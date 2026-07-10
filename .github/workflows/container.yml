@@ -19,6 +19,7 @@ on:
       - scripts/bootstrap-fly-production.ps1
       - scripts/initialize-deployment.ps1
       - scripts/new-production-ingest-token.ps1
+      - scripts/validate-fly-config.py
       - scripts/test-container.ps1
       - scripts/test-deployment-compose.ps1
       - scripts/test-observability-compose.ps1
@@ -47,6 +48,7 @@ on:
       - scripts/bootstrap-fly-production.ps1
       - scripts/initialize-deployment.ps1
       - scripts/new-production-ingest-token.ps1
+      - scripts/validate-fly-config.py
       - scripts/test-container.ps1
       - scripts/test-deployment-compose.ps1
       - scripts/test-observability-compose.ps1
@@ -80,27 +82,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Set up flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
-
-      - name: Validate Fly configuration
-        shell: bash
-        run: |
-          mkdir -p artifacts
-          set +e
-          flyctl config validate --strict --config fly.toml > artifacts/fly-config-validation.log 2>&1
-          status=$?
-          cat artifacts/fly-config-validation.log
-          exit "$status"
-
-      - name: Upload failing Fly configuration log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fly-config-validation
-          path: artifacts/fly-config-validation.log
-          if-no-files-found: ignore
-          retention-days: 7
+      - name: Validate Fly configuration contract
+        run: python3 ./scripts/validate-fly-config.py
 
       - name: Verify deployment contracts
         run: go test ./internal/config ./internal/deployment
