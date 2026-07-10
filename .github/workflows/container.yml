@@ -81,10 +81,26 @@ jobs:
           cache: true
 
       - name: Set up flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
 
       - name: Validate Fly configuration
-        run: flyctl config show --local >/dev/null
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set +e
+          flyctl config show --local > artifacts/fly-config-validation.log 2>&1
+          status=$?
+          cat artifacts/fly-config-validation.log
+          exit "$status"
+
+      - name: Upload failing Fly configuration log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fly-config-validation
+          path: artifacts/fly-config-validation.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify deployment contracts
         run: go test ./internal/config ./internal/deployment
