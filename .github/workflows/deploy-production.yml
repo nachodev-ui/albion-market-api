@@ -26,6 +26,9 @@ jobs:
       API_URL: https://albion-market-api.onrender.com
       FRONTEND_ORIGIN: https://albion-production-calculator.pages.dev
       MIGRATION_IMAGE: albion-market-api:production-migration-${{ github.sha }}
+      EXPECTED_AUTH_ENABLED: ${{ vars.AUTH0_ENABLED || 'false' }}
+      EXPECTED_AUTH_ISSUER: ${{ vars.AUTH0_ISSUER }}
+      EXPECTED_AUTH_AUDIENCE: ${{ vars.AUTH0_AUDIENCE || 'https://albion-market-api' }}
 
     steps:
       - name: Checkout production revision
@@ -35,6 +38,9 @@ jobs:
 
       - name: Validate Render repository contract
         run: python3 ./scripts/validate-render-config.py
+
+      - name: Validate Auth0 production configuration
+        run: python3 ./scripts/validate-auth0-production.py
 
       - name: Derive immutable build metadata
         id: metadata
@@ -123,6 +129,35 @@ jobs:
           curl --fail --show-error --silent "${API_URL}/healthz" | jq -e .
           curl --fail --show-error --silent "${API_URL}/readyz" | jq -e '.status == "ok"'
 
+      - name: Verify account authentication mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl \
+            --silent \
+            --show-error \
+            --output account-auth-response.json \
+            --write-out '%{http_code}' \
+            "${API_URL}/api/v1/me")"
+
+          if [[ "${EXPECTED_AUTH_ENABLED}" == 'true' ]]; then
+            if [[ "${status}" != '401' ]]; then
+              echo "Expected 401 from /api/v1/me with Auth0 enabled, got ${status}." >&2
+              cat account-auth-response.json >&2
+              exit 1
+            fi
+            jq -e '.error == "unauthorized"' account-auth-response.json > /dev/null
+            echo 'Auth0 account routes are enabled and reject missing bearer tokens.'
+          else
+            if [[ "${status}" != '503' ]]; then
+              echo "Expected 503 from /api/v1/me with Auth0 disabled, got ${status}." >&2
+              cat account-auth-response.json >&2
+              exit 1
+            fi
+            jq -e '.error == "authentication unavailable"' account-auth-response.json > /dev/null
+            echo 'Auth0 account routes remain disabled.'
+          fi
+
       - name: Validate Cloudflare CORS preflight
         shell: bash
         run: |
@@ -210,6 +245,7 @@ jobs:
             echo "- Created: \`${{ steps.metadata.outputs.created }}\`"
             echo "- Neon migrations: completed before deploy"
             echo "- Render health/readiness: verified"
+            echo "- Account authentication mode: ${EXPECTED_AUTH_ENABLED}"
             echo "- Cloudflare CORS and frontend: verified"
             echo "- Public prices/history: verified"
             echo "- Ingest authentication probe: rejected without writes"
