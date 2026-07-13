@@ -91,6 +91,21 @@ jobs:
           docker version
           docker compose version
 
+      - name: Resolve patched Go builder digest
+        shell: bash
+        run: |
+          digest="$(docker buildx imagetools inspect golang:1.26.5-bookworm | awk '/^Digest:/ {print $2; exit}')"
+          test -n "$digest"
+          printf 'golang:1.26.5-bookworm@%s\n' "$digest" | tee go-builder-digest.txt
+
+      - name: Upload Go builder digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-builder-digest-${{ github.run_id }}
+          path: go-builder-digest.txt
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Build production image for vulnerability scan
         run: |
           docker build \
