@@ -6,23 +6,31 @@ on:
       - develop
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   billing-diagnostics:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout feature branch
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - name: Generate formatting patch
+      - name: Apply Go formatting
         run: |
           gofmt -w .
-          git diff --binary > gofmt.patch
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- '*.go'
+            git commit -m "style: apply gofmt"
+            git push origin "HEAD:${{ github.head_ref }}"
+          fi
       - name: Capture contract diagnostics
         run: go test ./internal/contracts -run TestOpenAPI -count=1 > contracts.log 2>&1 || true
       - name: Capture Go test diagnostics
@@ -32,7 +40,6 @@ jobs:
         with:
           name: billing-diagnostics
           path: |
-            gofmt.patch
             contracts.log
             go-test.log
           if-no-files-found: error
