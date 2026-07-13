@@ -6,8 +6,11 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/accounts"
 )
 
+const accountReadScope = "read:account"
+
 type AccountAuthenticator interface {
 	Require(http.Handler) http.Handler
+	RequireScope(string, http.Handler) http.Handler
 }
 
 type AuthenticatedAccountHandler struct {
@@ -53,5 +56,5 @@ func (h *AuthenticatedAccountHandler) serve(
 		_, _ = w.Write([]byte("{\"error\":\"authentication unavailable\"}\n"))
 		return
 	}
-	h.authenticator.Require(next).ServeHTTP(w, r)
+	h.authenticator.RequireScope(accountReadScope, next).ServeHTTP(w, r)
 }
