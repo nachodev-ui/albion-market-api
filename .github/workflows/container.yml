@@ -84,25 +84,7 @@ jobs:
         run: python3 ./scripts/validate-render-config.py
 
       - name: Verify deployment contracts
-        id: deployment-contracts
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          go test ./internal/config ./internal/deployment 2>&1 | tee deployment-contracts.log
-
-      - name: Upload deployment contract results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deployment-contracts-${{ github.run_id }}
-          path: deployment-contracts.log
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Enforce deployment contract gate
-        if: steps.deployment-contracts.outcome == 'failure'
-        run: exit 1
+        run: go test ./internal/config ./internal/deployment
 
       - name: Show Docker versions
         run: |
