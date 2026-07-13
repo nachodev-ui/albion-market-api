@@ -1,0 +1,23 @@
+name: Trigger account foundation production deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/trigger-account-foundation-deploy.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch official production workflow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch production deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh workflow run deploy-production.yml --repo "${GITHUB_REPOSITORY}" --ref main --field confirm=DEPLOY
