@@ -13,6 +13,7 @@ import (
 
 	"github.com/nachodev-ui/albion-market-api/internal/accounts"
 	"github.com/nachodev-ui/albion-market-api/internal/authn"
+	"github.com/nachodev-ui/albion-market-api/internal/billing"
 	"github.com/nachodev-ui/albion-market-api/internal/config"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
@@ -40,6 +41,11 @@ func main() {
 	authCfg, err := config.LoadAccountAuth(cfg.AppEnv)
 	if err != nil {
 		bootstrapLogger.Error("auth.config_load_failed", observability.F("error", err))
+		return
+	}
+	billingCfg, err := config.LoadBilling(cfg.AppEnv)
+	if err != nil {
+		bootstrapLogger.Error("billing.config_load_failed", observability.F("error", err))
 		return
 	}
 	logger := observability.NewLoggerWithFormat(os.Stdout, cfg.LogColor, cfg.LogFormat)
@@ -79,6 +85,42 @@ func main() {
 	if err != nil {
 		logger.Error("auth.configure_failed", observability.F("error", err))
 		return
+	}
+
+	var billingHandler *billing.Handler
+	if billingCfg.Enabled {
+		provider, providerErr := billing.NewLemonProvider(billing.LemonProviderConfig{
+			APIBaseURL:          billingCfg.APIBaseURL,
+			APIKey:              billingCfg.APIKey,
+			StoreID:             billingCfg.StoreID,
+			VariantID:           billingCfg.VariantID,
+			CheckoutRedirectURL: billingCfg.CheckoutRedirectURL,
+			TestMode:            billingCfg.TestMode,
+			HTTPTimeout:         billingCfg.HTTPTimeout,
+		})
+		if providerErr != nil {
+			logger.Error("billing.provider_configure_failed", observability.F("error", providerErr))
+			return
+		}
+		billingService := billing.NewService(
+			dbpool,
+			accountService,
+			provider,
+			billing.ServiceConfig{
+				ProviderName:       billingCfg.Provider,
+				StoreID:            billingCfg.StoreID,
+				VariantID:          billingCfg.VariantID,
+				ExpectedTestMode:   billingCfg.TestMode,
+				PastDueGracePeriod: billingCfg.GracePeriod,
+			},
+		)
+		billingHandler = billing.NewHandler(
+			billingService,
+			billingCfg.WebhookSecret,
+			billingCfg.MaxWebhookBodyBytes,
+		)
+		billingCfg.APIKey = ""
+		billingCfg.WebhookSecret = ""
 	}
 
 	ingestMetrics := observability.NewIngestMetrics()
@@ -163,8 +205,9 @@ func main() {
 			Logger:      logger,
 		},
 		server.AccountRoutes{
-			Handler:       accountHandler,
-			Authenticator: accountAuthenticator,
+			Handler:        accountHandler,
+			BillingHandler: billingHandler,
+			Authenticator:  accountAuthenticator,
 		},
 	)
 
@@ -196,6 +239,12 @@ func main() {
 			observability.F("account_me", "/api/v1/me"),
 			observability.F("account_entitlements", "/api/v1/me/entitlements"),
 			observability.F("auth_enabled", authCfg.Enabled),
+			observability.F("billing_enabled", billingCfg.Enabled),
+			observability.F("billing_provider", billingCfg.Provider),
+			observability.F("billing_test_mode", billingCfg.TestMode),
+			observability.F("billing_checkout", "/api/v1/billing/checkout"),
+			observability.F("billing_portal", "/api/v1/billing/portal"),
+			observability.F("billing_webhook", "/api/v1/webhooks/lemonsqueezy"),
 			observability.F("history_ingest", "/api/v1/ingest/history"),
 			observability.F("ingest_credential_ids", credentialIDs(cfg.IngestCredentialSources)),
 			observability.F("ingest_require_https", cfg.IngestRequireHTTPS),
