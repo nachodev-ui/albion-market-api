@@ -3,8 +3,18 @@ package server
 import (
 	"net/http"
 
+	"github.com/nachodev-ui/albion-market-api/internal/accounts"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 )
+
+type AccountAuthenticator interface {
+	Require(http.Handler) http.Handler
+}
+
+type AccountRoutes struct {
+	Handler       *accounts.Handler
+	Authenticator AccountAuthenticator
+}
 
 func NewRouter(
 	healthHandler *handlers.HealthHandler,
@@ -15,6 +25,7 @@ func NewRouter(
 	metricsHandler *handlers.MetricsHandler,
 	security SecurityOptions,
 	observability ObservabilityOptions,
+	accountRoutes ...AccountRoutes,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -29,6 +40,15 @@ func NewRouter(
 	mux.HandleFunc("/api/v1/history", historyHandler.GetMarketHistory)
 	mux.HandleFunc("/api/v1/history/query", historyHandler.QueryMarketHistory)
 	mux.HandleFunc("/api/v1/status", statusHandler.Status)
+
+	if len(accountRoutes) > 0 {
+		routes := accountRoutes[0]
+		if routes.Handler != nil && routes.Authenticator != nil {
+			accountHandler := handlers.NewAuthenticatedAccountHandler(routes.Handler, routes.Authenticator)
+			mux.HandleFunc("/api/v1/me", accountHandler.Me)
+			mux.HandleFunc("/api/v1/me/entitlements", accountHandler.Entitlements)
+		}
+	}
 
 	var handler http.Handler = mux
 	if security.RateLimit.Enabled {

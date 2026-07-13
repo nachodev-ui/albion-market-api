@@ -11,6 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/nachodev-ui/albion-market-api/internal/accounts"
+	"github.com/nachodev-ui/albion-market-api/internal/authn"
 	"github.com/nachodev-ui/albion-market-api/internal/config"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
@@ -33,6 +35,11 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		bootstrapLogger.Error("config.load_failed", observability.F("error", err))
+		return
+	}
+	authCfg, err := config.LoadAccountAuth(cfg.AppEnv)
+	if err != nil {
+		bootstrapLogger.Error("auth.config_load_failed", observability.F("error", err))
 		return
 	}
 	logger := observability.NewLoggerWithFormat(os.Stdout, cfg.LogColor, cfg.LogFormat)
@@ -66,6 +73,14 @@ func main() {
 	databaseMetrics := observability.NewDatabaseMetrics()
 	repo := repository.NewMarketRepository(dbpool, databaseMetrics)
 	svc := service.NewMarketService(repo)
+	accountService := accounts.NewService(dbpool)
+	accountHandler := accounts.NewHandler(accountService)
+	accountAuthenticator, err := authn.New(authCfg)
+	if err != nil {
+		logger.Error("auth.configure_failed", observability.F("error", err))
+		return
+	}
+
 	ingestMetrics := observability.NewIngestMetrics()
 	historyIngestMetrics := observability.NewHistoryIngestMetrics()
 	httpMetrics := observability.NewHTTPMetrics()
@@ -77,7 +92,7 @@ func main() {
 		readinessMetrics,
 	)
 
-	authenticator, err := ingestauth.New(cfg.IngestCredentials, ingestauth.Options{
+	ingestAuthenticator, err := ingestauth.New(cfg.IngestCredentials, ingestauth.Options{
 		RequireHTTPS:      cfg.IngestRequireHTTPS,
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
 	})
@@ -91,23 +106,25 @@ func main() {
 	}
 
 	healthHandler := handlers.NewHealthHandler(readinessChecker)
-	metricsHandler := handlers.NewMetricsHandler(observability.NewPrometheusExporter(observability.PrometheusExporterOptions{
-		Service:          serviceName,
-		Environment:      cfg.AppEnv,
-		Version:          version,
-		Revision:         revision,
-		StartedAt:        startedAt,
-		HTTP:             httpMetrics,
-		Database:         databaseMetrics,
-		DatabasePool:     databaseMonitor,
-		Ingest:           ingestMetrics,
-		HistoryIngest:    historyIngestMetrics,
-		Readiness:        readinessMetrics,
-		ReadinessChecker: readinessChecker,
-	}))
-	ingestHandler := handlers.NewIngestHandler(
+	metricsHandler := handlers.NewMetricsHandler(observability.NewPrometheusExporter(
+		observability.PrometheusExporterOptions{
+			Service:          serviceName,
+			Environment:      cfg.AppEnv,
+			Version:          version,
+			Revision:         revision,
+			StartedAt:        startedAt,
+			HTTP:             httpMetrics,
+			Database:         databaseMetrics,
+			DatabasePool:     databaseMonitor,
+			Ingest:           ingestMetrics,
+			HistoryIngest:    historyIngestMetrics,
+			Readiness:        readinessMetrics,
+			ReadinessChecker: readinessChecker,
+		},
+	))
+	legacyIngestHandler := handlers.NewIngestHandler(
 		svc,
-		authenticator,
+		ingestAuthenticator,
 		cfg.MaxIngestBodyBytes,
 		ingestMetrics,
 		logger,
@@ -126,7 +143,7 @@ func main() {
 
 	router := server.NewRouter(
 		healthHandler,
-		ingestHandler,
+		legacyIngestHandler,
 		pricesHandler,
 		historyHandler,
 		statusHandler,
@@ -144,6 +161,10 @@ func main() {
 		server.ObservabilityOptions{
 			HTTPMetrics: httpMetrics,
 			Logger:      logger,
+		},
+		server.AccountRoutes{
+			Handler:       accountHandler,
+			Authenticator: accountAuthenticator,
 		},
 	)
 
@@ -172,6 +193,9 @@ func main() {
 			observability.F("prices_query", "/api/v1/prices/query"),
 			observability.F("history", "/api/v1/history"),
 			observability.F("history_query", "/api/v1/history/query"),
+			observability.F("account_me", "/api/v1/me"),
+			observability.F("account_entitlements", "/api/v1/me/entitlements"),
+			observability.F("auth_enabled", authCfg.Enabled),
 			observability.F("history_ingest", "/api/v1/ingest/history"),
 			observability.F("ingest_credential_ids", credentialIDs(cfg.IngestCredentialSources)),
 			observability.F("ingest_require_https", cfg.IngestRequireHTTPS),
@@ -199,7 +223,6 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("api.shutdown_failed", observability.F("error", err))
 		return

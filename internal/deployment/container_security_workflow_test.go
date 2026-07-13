@@ -31,12 +31,18 @@ func TestContainerWorkflowBlocksFixableHighAndCriticalVulnerabilities(t *testing
 		"image-ref: ${{ env.SCAN_IMAGE }}",
 		"scan-type: image",
 		"scanners: vuln",
-		"format: table",
-		"exit-code: '1'",
+		"format: json",
+		"output: trivy-results.json",
+		"exit-code: '0'",
 		"ignore-unfixed: true",
 		"pkg-types: os,library",
 		"severity: CRITICAL,HIGH",
 		"version: " + trivyVersion,
+		"Upload Trivy results",
+		"Enforce vulnerability gate",
+		"[.Results[]?.Vulnerabilities[]?] | length == 0",
+		"The production image contains fixed HIGH or CRITICAL vulnerabilities.",
+		"exit 1",
 	}
 	for _, value := range required {
 		if !strings.Contains(content, value) {
@@ -59,9 +65,11 @@ func TestContainerWorkflowBlocksFixableHighAndCriticalVulnerabilities(t *testing
 
 	buildIndex := strings.Index(content, "Build production image for vulnerability scan")
 	scanIndex := strings.Index(content, "Scan production image for high and critical vulnerabilities")
+	gateIndex := strings.Index(content, "Enforce vulnerability gate")
 	composeIndex := strings.Index(content, "Build and test secure Compose deployment")
-	if buildIndex < 0 || scanIndex < 0 || composeIndex < 0 || !(buildIndex < scanIndex && scanIndex < composeIndex) {
-		t.Error("the production image must be built, scanned and only then smoke-tested with Compose")
+	if buildIndex < 0 || scanIndex < 0 || gateIndex < 0 || composeIndex < 0 ||
+		!(buildIndex < scanIndex && scanIndex < gateIndex && gateIndex < composeIndex) {
+		t.Error("the production image must be built, scanned, gated and only then smoke-tested with Compose")
 	}
 }
 
