@@ -1,57 +1,70 @@
-# Activación de Auth0 en producción
+# Auth0 en producción
 
 ## Contrato de identidad
 
-La API utiliza Auth0 únicamente para identidad. La autorización efectiva permanece en PostgreSQL mediante planes, suscripciones, entitlements y overrides.
-
-Valores acordados:
+La API usa Auth0 para identidad y autorización OAuth del endpoint de cuenta. La autorización comercial continúa en PostgreSQL mediante planes, suscripciones, entitlements y overrides.
 
 ```text
+Issuer: https://albion-production-calculator.us.auth0.com/
 Audience / API Identifier: https://albion-market-api
+Required delegated scope: read:account
 Frontend origin: https://albion-production-calculator.pages.dev
 API origin: https://albion-market-api.onrender.com
-```
-
-## Auth0
-
-Crear una API llamada `Albion Market API` con:
-
-```text
-Identifier: https://albion-market-api
 Signing Algorithm: RS256
 ```
 
-La SPA `Albion Production Calculator` debe solicitar access tokens para esa audience.
+## Validación de access tokens
+
+Antes de ejecutar las rutas `/api/v1/me` y `/api/v1/me/entitlements`, la API comprueba:
+
+- firma RS256 mediante JWKS;
+- issuer exacto;
+- audience exacta;
+- `sub`, expiración, `nbf` e `iat`;
+- presencia de `read:account` en `scope` o `permissions`.
+
+Un token válido sin el scope requerido responde `403 forbidden`. Un token ausente, inválido o expirado responde `401 unauthorized`.
+
+## Auth0 Application Access
+
+La API define el permiso:
+
+```text
+read:account
+```
+
+La SPA `Albion Production Calculator` tiene acceso delegado `1 / 1`. Client Access y Client Credentials permanecen deshabilitados.
+
+El frontend solicita:
+
+```text
+openid profile email read:account
+```
 
 ## Render
 
-Configurar en el servicio `albion-market-api`:
+`render.yaml` declara los identificadores públicos y activa Auth0:
 
 ```text
-AUTH_ENABLED=false
-AUTH_ISSUER=https://<tenant-domain>/
+AUTH_ENABLED=true
+AUTH_EMERGENCY_DISABLED=false
+AUTH_ISSUER=https://albion-production-calculator.us.auth0.com/
 AUTH_AUDIENCE=https://albion-market-api
 ```
 
-Primero guardar issuer y audience con autenticación deshabilitada. Después de comprobar el discovery document y JWKS, cambiar `AUTH_ENABLED=true` y ejecutar el workflow manual `Deploy production to Render`.
+La configuración de production también usa esos valores como defaults seguros. `AUTH_EMERGENCY_DISABLED=true` es el único interruptor operacional para deshabilitar temporalmente identidad ante una incidencia.
 
-`render.yaml` declara las tres variables con `sync: false` para que sus valores reales permanezcan gestionados por Render y no se almacenen en Git.
+## Deployment
 
-## GitHub Environment `production`
+El workflow `Deploy Auth0 production to Render`:
 
-Configurar las variables públicas de control usadas por el workflow:
+1. valida el contrato Render;
+2. consulta discovery y JWKS del tenant;
+3. aplica las migraciones de Neon;
+4. despliega la revisión exacta mediante el hook de Render;
+5. espera que `/metrics` exponga esa revisión;
+6. verifica health y readiness;
+7. exige `401` en `/api/v1/me` sin bearer token;
+8. valida CORS desde Cloudflare Pages.
 
-```text
-AUTH0_ENABLED=false
-AUTH0_ISSUER=https://<tenant-domain>/
-AUTH0_AUDIENCE=https://albion-market-api
-```
-
-El workflow ejecuta `scripts/validate-auth0-production.py` antes de migrar o desplegar. Cuando `AUTH0_ENABLED=true`, valida el discovery document, endpoints HTTPS y al menos una clave RSA compatible con RS256.
-
-Después del despliegue, `/api/v1/me` sin bearer token debe responder:
-
-- `401 unauthorized` cuando Auth0 está habilitado;
-- `503 authentication unavailable` cuando continúa deshabilitado.
-
-Esta comprobación evita publicar un frontend con login activo contra una API todavía apagada.
+El workflow manual general `Deploy production to Render` también espera Auth0 habilitado, evitando regresiones futuras a `503 authentication unavailable`.

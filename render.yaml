@@ -24,11 +24,13 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         value: https://albion-production-calculator.pages.dev
       - key: AUTH_ENABLED
-        sync: false
+        value: "true"
+      - key: AUTH_EMERGENCY_DISABLED
+        value: "false"
       - key: AUTH_ISSUER
-        sync: false
+        value: https://albion-production-calculator.us.auth0.com/
       - key: AUTH_AUDIENCE
-        sync: false
+        value: https://albion-market-api
       - key: AUTH_JWKS_CACHE_TTL
         value: 15m
       - key: AUTH_HTTP_TIMEOUT
