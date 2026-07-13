@@ -51,6 +51,12 @@ jobs:
             exit 1
           fi
 
+      - name: Validate disabled Auth0 production configuration
+        env:
+          EXPECTED_AUTH_ENABLED: 'false'
+          EXPECTED_AUTH_AUDIENCE: https://albion-market-api
+        run: python3 ./scripts/validate-auth0-production.py
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
