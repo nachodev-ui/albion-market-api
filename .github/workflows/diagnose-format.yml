@@ -1,0 +1,20 @@
+name: Diagnose formatting
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: List unformatted files
+        shell: bash
+        run: |
+          files="$(gofmt -l .)"
+          printf 'UNFORMATTED_BEGIN\n%s\nUNFORMATTED_END\n' "$files"
+          test -z "$files"
