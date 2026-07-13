@@ -1,0 +1,71 @@
+name: Verify account foundation production deploy
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/verify-account-foundation-deploy.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  deploy-and-wait:
+    name: Dispatch and verify official production workflow
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Dispatch official production deployment
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous_id="$(gh run list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --workflow deploy-production.yml \
+            --event workflow_dispatch \
+            --branch main \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // 0')"
+
+          gh workflow run deploy-production.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            --field confirm=DEPLOY
+
+          run_id=""
+          for attempt in $(seq 1 30); do
+            candidate="$(gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow deploy-production.yml \
+              --event workflow_dispatch \
+              --branch main \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // 0')"
+            if [[ "${candidate}" != "0" && "${candidate}" != "${previous_id}" ]]; then
+              run_id="${candidate}"
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ -z "${run_id}" ]]; then
+            echo "Could not identify the dispatched production workflow run." >&2
+            exit 1
+          fi
+
+          echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+          echo "Dispatched production workflow run ${run_id}."
+
+      - name: Wait for production verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        shell: bash
+        run: gh run watch "${RUN_ID}" --repo "${GITHUB_REPOSITORY}" --exit-status --interval 10
