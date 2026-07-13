@@ -2,11 +2,11 @@ package config
 
 import "testing"
 
-func TestLoadAccountAuthEnablesProductionIdentity(t *testing.T) {
+func TestLoadAccountAuthPinsProductionIdentity(t *testing.T) {
 	t.Setenv("AUTH_ENABLED", "false")
 	t.Setenv("AUTH_EMERGENCY_DISABLED", "false")
-	t.Setenv("AUTH_ISSUER", "")
-	t.Setenv("AUTH_AUDIENCE", "")
+	t.Setenv("AUTH_ISSUER", "https://stale-tenant.example.invalid/")
+	t.Setenv("AUTH_AUDIENCE", "https://stale-audience.example.invalid")
 
 	cfg, err := LoadAccountAuth("production")
 	if err != nil {
