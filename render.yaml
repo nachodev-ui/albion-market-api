@@ -24,7 +24,7 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         value: https://albion-production-calculator.pages.dev
       - key: AUTH_ENABLED
-        value: "false"
+        sync: false
       - key: AUTH_ISSUER
         sync: false
       - key: AUTH_AUDIENCE
