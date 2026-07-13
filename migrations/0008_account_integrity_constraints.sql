@@ -1,8 +1,31 @@
+alter table app_users
+    drop constraint if exists app_users_auth_subject_length,
+    drop constraint if exists app_users_display_name_length,
+    drop constraint if exists app_users_email_length;
+
 alter table billing_webhook_events
-    drop constraint if exists billing_webhook_events_status_check;
+    drop constraint if exists billing_webhook_events_status_check,
+    drop constraint if exists billing_webhook_events_error_length,
+    drop constraint if exists billing_webhook_events_event_id_length,
+    drop constraint if exists billing_webhook_events_provider_length,
+    drop constraint if exists billing_webhook_events_status_allowed,
+    drop constraint if exists billing_webhook_events_type_length;
+
+alter table plan_entitlements
+    drop constraint if exists plan_entitlements_key_format;
+
+alter table plans
+    drop constraint if exists plans_display_name_length;
 
 alter table subscriptions
-    drop constraint if exists subscriptions_status_check;
+    drop constraint if exists subscriptions_status_check,
+    drop constraint if exists subscriptions_period_order,
+    drop constraint if exists subscriptions_provider_length,
+    drop constraint if exists subscriptions_status_allowed;
+
+alter table user_entitlement_overrides
+    drop constraint if exists user_entitlement_overrides_key_format,
+    drop constraint if exists user_entitlement_overrides_reason_length;
 
 alter table app_users
     add constraint app_users_auth_subject_length
