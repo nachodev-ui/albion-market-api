@@ -45,12 +45,8 @@ func LoadAccountAuth(appEnv string) (authn.Config, error) {
 	issuerValue := strings.TrimSpace(getEnv("AUTH_ISSUER", ""))
 	audienceValue := strings.TrimSpace(getEnv("AUTH_AUDIENCE", ""))
 	if production {
-		if issuerValue == "" {
-			issuerValue = productionAuthIssuer
-		}
-		if audienceValue == "" {
-			audienceValue = productionAuthAudience
-		}
+		issuerValue = productionAuthIssuer
+		audienceValue = productionAuthAudience
 	}
 
 	cfg := authn.Config{
