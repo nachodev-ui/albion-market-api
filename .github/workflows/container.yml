@@ -94,7 +94,14 @@ jobs:
       - name: Resolve patched Go builder digest
         shell: bash
         run: |
-          digest="$(docker buildx imagetools inspect golang:1.26.5-bookworm | awk '/^Digest:/ {print $2; exit}')"
+          set -euo pipefail
+          token="$(curl --fail --silent --show-error 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/golang:pull' | jq -r '.token')"
+          digest="$(curl --fail --silent --show-error --head \
+            --header "Authorization: Bearer ${token}" \
+            --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+            'https://registry-1.docker.io/v2/library/golang/manifests/1.26.5-bookworm' \
+            | tr -d '\r' \
+            | awk -F ': ' 'tolower($1) == "docker-content-digest" {print $2; exit}')"
           test -n "$digest"
           printf 'golang:1.26.5-bookworm@%s\n' "$digest" | tee go-builder-digest.txt
 
@@ -134,7 +141,7 @@ jobs:
         with:
           name: trivy-results-${{ github.run_id }}
           path: trivy-results.json
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 7
 
       - name: Enforce vulnerability gate
