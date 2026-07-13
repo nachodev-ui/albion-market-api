@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/nachodev-ui/albion-market-api/internal/accounts"
+	"github.com/nachodev-ui/albion-market-api/internal/billing"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 )
 
@@ -13,8 +14,9 @@ type AccountAuthenticator interface {
 }
 
 type AccountRoutes struct {
-	Handler       *accounts.Handler
-	Authenticator AccountAuthenticator
+	Handler        *accounts.Handler
+	BillingHandler *billing.Handler
+	Authenticator  AccountAuthenticator
 }
 
 func NewRouter(
@@ -48,6 +50,12 @@ func NewRouter(
 			accountHandler := handlers.NewAuthenticatedAccountHandler(routes.Handler, routes.Authenticator)
 			mux.HandleFunc("/api/v1/me", accountHandler.Me)
 			mux.HandleFunc("/api/v1/me/entitlements", accountHandler.Entitlements)
+		}
+		if routes.BillingHandler != nil {
+			billingHandler := handlers.NewAuthenticatedBillingHandler(routes.BillingHandler, routes.Authenticator)
+			mux.HandleFunc("/api/v1/billing/checkout", billingHandler.Checkout)
+			mux.HandleFunc("/api/v1/billing/portal", billingHandler.Portal)
+			mux.HandleFunc("/api/v1/webhooks/lemonsqueezy", billingHandler.Webhook)
 		}
 	}
 

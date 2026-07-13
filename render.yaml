@@ -37,6 +37,30 @@ services:
         value: 5s
       - key: AUTH_CLOCK_SKEW
         value: 30s
+      - key: BILLING_ENABLED
+        value: "false"
+      - key: BILLING_PROVIDER
+        value: lemonsqueezy
+      - key: BILLING_TEST_MODE
+        value: "true"
+      - key: BILLING_CHECKOUT_REDIRECT_URL
+        value: https://albion-production-calculator.pages.dev/account?checkout=success
+      - key: BILLING_GRACE_PERIOD
+        value: 168h
+      - key: BILLING_HTTP_TIMEOUT
+        value: 10s
+      - key: BILLING_MAX_WEBHOOK_BODY_BYTES
+        value: "1048576"
+      - key: LEMONSQUEEZY_API_BASE_URL
+        value: https://api.lemonsqueezy.com
+      - key: LEMONSQUEEZY_STORE_ID
+        sync: false
+      - key: LEMONSQUEEZY_PRO_VARIANT_ID
+        sync: false
+      - key: LEMONSQUEEZY_API_KEY
+        sync: false
+      - key: LEMONSQUEEZY_WEBHOOK_SECRET
+        sync: false
       - key: INGEST_BEARER_TOKEN_ID
         value: receiver-production-2026-07
       - key: INGEST_REQUIRE_HTTPS

@@ -32,6 +32,8 @@ tags:
     description: Ingesta interna autenticada e idempotente.
   - name: Accounts
     description: Perfil autenticado, suscripción y entitlements efectivos.
+  - name: Billing
+    description: Checkout, portal de cliente y sincronización de suscripciones.
 paths:
   /healthz:
     get:
@@ -223,6 +225,160 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: authentication unavailable
+
+  /api/v1/billing/checkout:
+    post:
+      tags: [Billing]
+      operationId: createBillingCheckout
+      security:
+        - userBearer: []
+      summary: Crear un checkout alojado para contratar Pro
+      description: Requiere el scope `read:account` y vincula el checkout con el usuario autenticado.
+      responses:
+        '201':
+          description: Checkout sandbox creado.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingURLResponse'
+        '401':
+          description: Access token ausente, inválido o expirado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Origen no permitido o token sin el scope requerido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedPost'
+        '409':
+          description: El usuario ya posee una suscripción administrada por el proveedor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          description: El proveedor de facturación no respondió correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: La facturación todavía no está habilitada en el runtime.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/billing/portal:
+    post:
+      tags: [Billing]
+      operationId: createBillingPortal
+      security:
+        - userBearer: []
+      summary: Obtener una URL vigente del portal de cliente
+      description: Requiere el scope `read:account` y una suscripción asociada al usuario.
+      responses:
+        '200':
+          description: URL firmada del portal de cliente.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingURLResponse'
+        '401':
+          description: Access token ausente, inválido o expirado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Origen no permitido o token sin el scope requerido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: El usuario no tiene una suscripción del proveedor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedPost'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          description: El proveedor de facturación no respondió correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: La facturación todavía no está habilitada en el runtime.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/webhooks/lemonsqueezy:
+    post:
+      tags: [Billing]
+      operationId: processLemonSqueezyWebhook
+      security: []
+      summary: Procesar un evento firmado de Lemon Squeezy
+      description: Valida `X-Signature`, deduplica el payload y sincroniza el acceso efectivo.
+      responses:
+        '200':
+          description: Evento procesado, ignorado o reconocido como duplicado.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingWebhookResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Firma HMAC ausente o inválida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedPost'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          description: El evento no pudo persistirse o sincronizarse.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: La facturación todavía no está habilitada en el runtime.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/status:
     get:
@@ -980,6 +1136,24 @@ components:
           $ref: '#/components/schemas/AccountSubscription'
         entitlements:
           $ref: '#/components/schemas/EntitlementMap'
+    BillingURLResponse:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+    BillingWebhookResponse:
+      type: object
+      additionalProperties: false
+      required: [status, duplicate]
+      properties:
+        status:
+          type: string
+          enum: [processed, ignored]
+        duplicate:
+          type: boolean
     Server:
       type: string
       enum: [west, east, europe]
