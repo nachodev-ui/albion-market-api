@@ -44,8 +44,9 @@ func NewRouter(
 	if len(accountRoutes) > 0 {
 		routes := accountRoutes[0]
 		if routes.Handler != nil && routes.Authenticator != nil {
-			mux.Handle("/api/v1/me", routes.Authenticator.Require(http.HandlerFunc(routes.Handler.Me)))
-			mux.Handle("/api/v1/me/entitlements", routes.Authenticator.Require(http.HandlerFunc(routes.Handler.Entitlements)))
+			accountHandler := handlers.NewAuthenticatedAccountHandler(routes.Handler, routes.Authenticator)
+			mux.HandleFunc("/api/v1/me", accountHandler.Me)
+			mux.HandleFunc("/api/v1/me/entitlements", accountHandler.Entitlements)
 		}
 	}
 
