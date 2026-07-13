@@ -22,6 +22,10 @@ func NewAuthenticatedBillingHandler(
 }
 
 func (h *AuthenticatedBillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.handler == nil {
+		writeBillingUnavailable(w)
+		return
+	}
 	if r.Method != http.MethodPost {
 		h.serveAuthenticated(w, r, h.handler.Checkout)
 		return
@@ -30,6 +34,10 @@ func (h *AuthenticatedBillingHandler) Checkout(w http.ResponseWriter, r *http.Re
 }
 
 func (h *AuthenticatedBillingHandler) Portal(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.handler == nil {
+		writeBillingUnavailable(w)
+		return
+	}
 	if r.Method != http.MethodPost {
 		h.serveAuthenticated(w, r, h.handler.Portal)
 		return
@@ -38,6 +46,10 @@ func (h *AuthenticatedBillingHandler) Portal(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *AuthenticatedBillingHandler) Webhook(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.handler == nil {
+		writeBillingUnavailable(w)
+		return
+	}
 	if r.Method != http.MethodPost {
 		h.servePublic(w, r, h.handler.Webhook)
 		return
@@ -50,7 +62,7 @@ func (h *AuthenticatedBillingHandler) serveAuthenticated(
 	r *http.Request,
 	next http.HandlerFunc,
 ) {
-	if h == nil || h.handler == nil || h.authenticator == nil {
+	if h.authenticator == nil {
 		writeBillingUnavailable(w)
 		return
 	}
@@ -62,10 +74,6 @@ func (h *AuthenticatedBillingHandler) servePublic(
 	r *http.Request,
 	next http.HandlerFunc,
 ) {
-	if h == nil || h.handler == nil {
-		writeBillingUnavailable(w)
-		return
-	}
 	next.ServeHTTP(w, r)
 }
 
