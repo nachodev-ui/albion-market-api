@@ -4,8 +4,11 @@ import (
 	"net/http"
 
 	"github.com/nachodev-ui/albion-market-api/internal/accounts"
+	"github.com/nachodev-ui/albion-market-api/internal/billing"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 )
+
+const accountReadScope = "read:account"
 
 type AccountAuthenticator interface {
 	Require(http.Handler) http.Handler
@@ -13,8 +16,9 @@ type AccountAuthenticator interface {
 }
 
 type AccountRoutes struct {
-	Handler       *accounts.Handler
-	Authenticator AccountAuthenticator
+	Handler        *accounts.Handler
+	BillingHandler *billing.Handler
+	Authenticator  AccountAuthenticator
 }
 
 func NewRouter(
@@ -48,6 +52,19 @@ func NewRouter(
 			accountHandler := handlers.NewAuthenticatedAccountHandler(routes.Handler, routes.Authenticator)
 			mux.HandleFunc("/api/v1/me", accountHandler.Me)
 			mux.HandleFunc("/api/v1/me/entitlements", accountHandler.Entitlements)
+		}
+		if routes.BillingHandler != nil {
+			mux.HandleFunc("/api/v1/webhooks/lemonsqueezy", routes.BillingHandler.Webhook)
+			if routes.Authenticator != nil {
+				mux.Handle(
+					"/api/v1/billing/checkout",
+					routes.Authenticator.RequireScope(accountReadScope, http.HandlerFunc(routes.BillingHandler.Checkout)),
+				)
+				mux.Handle(
+					"/api/v1/billing/portal",
+					routes.Authenticator.RequireScope(accountReadScope, http.HandlerFunc(routes.BillingHandler.Portal)),
+				)
+			}
 		}
 	}
 
