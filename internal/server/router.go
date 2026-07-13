@@ -9,6 +9,7 @@ import (
 
 type AccountAuthenticator interface {
 	Require(http.Handler) http.Handler
+	RequireScope(string, http.Handler) http.Handler
 }
 
 type AccountRoutes struct {
