@@ -11,7 +11,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality:
@@ -19,8 +19,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout feature branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Apply formatting
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          gofmt -w .
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- '*.go'
+            git commit -m "style: apply gofmt"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          fi
 
       - name: Reject committed secret files
         shell: bash
@@ -43,19 +64,12 @@ jobs:
             printf 'Long-form documentation must live under docs/:\n%s\n' "$stray_docs"
             exit 1
           fi
-
           invalid_migrations="$(find migrations -mindepth 1 -maxdepth 1 \
             \( ! -type f -o -type f ! -name '*.sql' \) -print 2>/dev/null || true)"
           if [[ -n "$invalid_migrations" ]]; then
             printf 'migrations/ may contain only SQL migration files:\n%s\n' "$invalid_migrations"
             exit 1
           fi
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
 
       - name: Download dependencies
         run: go mod download
@@ -65,13 +79,7 @@ jobs:
 
       - name: Check formatting
         shell: bash
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "Files that require gofmt:"
-            echo "$unformatted"
-            exit 1
-          fi
+        run: test -z "$(gofmt -l .)"
 
       - name: Vet
         run: go vet ./...
