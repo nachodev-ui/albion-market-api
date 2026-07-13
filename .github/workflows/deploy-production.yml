@@ -26,9 +26,9 @@ jobs:
       API_URL: https://albion-market-api.onrender.com
       FRONTEND_ORIGIN: https://albion-production-calculator.pages.dev
       MIGRATION_IMAGE: albion-market-api:production-migration-${{ github.sha }}
-      EXPECTED_AUTH_ENABLED: ${{ vars.AUTH0_ENABLED || 'false' }}
-      EXPECTED_AUTH_ISSUER: ${{ vars.AUTH0_ISSUER }}
-      EXPECTED_AUTH_AUDIENCE: ${{ vars.AUTH0_AUDIENCE || 'https://albion-market-api' }}
+      EXPECTED_AUTH_ENABLED: 'true'
+      EXPECTED_AUTH_ISSUER: https://albion-production-calculator.us.auth0.com/
+      EXPECTED_AUTH_AUDIENCE: https://albion-market-api
 
     steps:
       - name: Checkout production revision

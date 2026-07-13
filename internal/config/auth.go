@@ -9,11 +9,26 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/authn"
 )
 
+const (
+	productionAuthIssuer   = "https://albion-production-calculator.us.auth0.com/"
+	productionAuthAudience = "https://albion-market-api"
+)
+
 func LoadAccountAuth(appEnv string) (authn.Config, error) {
+	production := strings.EqualFold(strings.TrimSpace(appEnv), "production")
+
 	enabled, err := boolEnv("AUTH_ENABLED", false)
 	if err != nil {
 		return authn.Config{}, err
 	}
+	emergencyDisabled, err := boolEnv("AUTH_EMERGENCY_DISABLED", false)
+	if err != nil {
+		return authn.Config{}, err
+	}
+	if production {
+		enabled = !emergencyDisabled
+	}
+
 	cacheTTL, err := durationEnv("AUTH_JWKS_CACHE_TTL", 15*time.Minute)
 	if err != nil {
 		return authn.Config{}, err
@@ -27,10 +42,17 @@ func LoadAccountAuth(appEnv string) (authn.Config, error) {
 		return authn.Config{}, err
 	}
 
+	issuerValue := strings.TrimSpace(getEnv("AUTH_ISSUER", ""))
+	audienceValue := strings.TrimSpace(getEnv("AUTH_AUDIENCE", ""))
+	if production {
+		issuerValue = productionAuthIssuer
+		audienceValue = productionAuthAudience
+	}
+
 	cfg := authn.Config{
 		Enabled:     enabled,
-		Issuer:      strings.TrimSpace(getEnv("AUTH_ISSUER", "")),
-		Audience:    strings.TrimSpace(getEnv("AUTH_AUDIENCE", "")),
+		Issuer:      issuerValue,
+		Audience:    audienceValue,
 		CacheTTL:    cacheTTL,
 		HTTPTimeout: timeout,
 		ClockSkew:   skew,
@@ -43,11 +65,11 @@ func LoadAccountAuth(appEnv string) (authn.Config, error) {
 	if err != nil || !issuer.IsAbs() || issuer.Host == "" {
 		return authn.Config{}, fmt.Errorf("AUTH_ISSUER must be an absolute URL")
 	}
-	if strings.EqualFold(strings.TrimSpace(appEnv), "production") && issuer.Scheme != "https" {
+	if production && issuer.Scheme != "https" {
 		return authn.Config{}, fmt.Errorf("AUTH_ISSUER must use https in production")
 	}
 	if cfg.Audience == "" {
-		return authn.Config{}, fmt.Errorf("AUTH_AUDIENCE is required when AUTH_ENABLED=true")
+		return authn.Config{}, fmt.Errorf("AUTH_AUDIENCE is required when authentication is enabled")
 	}
 	if cacheTTL < time.Minute || timeout < time.Second || skew < 0 {
 		return authn.Config{}, fmt.Errorf("invalid authentication timing configuration")
