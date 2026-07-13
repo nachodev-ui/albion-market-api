@@ -129,15 +129,15 @@ type tokenHeader struct {
 }
 
 type tokenClaims struct {
-	Issuer      string   `json:"iss"`
-	Subject     string   `json:"sub"`
-	Audience    audience `json:"aud"`
-	ExpiresAt   int64    `json:"exp"`
-	NotBefore   int64    `json:"nbf,omitempty"`
-	IssuedAt    int64    `json:"iat,omitempty"`
-	Email       string   `json:"email,omitempty"`
-	Name        string   `json:"name,omitempty"`
-	Nickname    string   `json:"nickname,omitempty"`
+	Issuer    string   `json:"iss"`
+	Subject   string   `json:"sub"`
+	Audience  audience `json:"aud"`
+	ExpiresAt int64    `json:"exp"`
+	NotBefore int64    `json:"nbf,omitempty"`
+	IssuedAt  int64    `json:"iat,omitempty"`
+	Email     string   `json:"email,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	Nickname  string   `json:"nickname,omitempty"`
 }
 
 type audience []string
@@ -236,12 +236,12 @@ type jwksDocument struct {
 }
 
 type jwk struct {
-	KeyType  string `json:"kty"`
-	Use      string `json:"use"`
+	KeyType   string `json:"kty"`
+	Use       string `json:"use"`
 	Algorithm string `json:"alg"`
-	KeyID    string `json:"kid"`
-	Modulus  string `json:"n"`
-	Exponent string `json:"e"`
+	KeyID     string `json:"kid"`
+	Modulus   string `json:"n"`
+	Exponent  string `json:"e"`
 }
 
 func (p *JWKSProvider) Key(ctx context.Context, keyID string) (*rsa.PublicKey, error) {
