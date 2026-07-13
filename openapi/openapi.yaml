@@ -1137,23 +1137,23 @@ components:
         entitlements:
           $ref: '#/components/schemas/EntitlementMap'
     BillingURLResponse:
-    type: object
-    additionalProperties: false
-    required: [url]
-    properties:
-      url:
-        type: string
-        format: uri
-  BillingWebhookResponse:
-    type: object
-    additionalProperties: false
-    required: [status, duplicate]
-    properties:
-      status:
-        type: string
-        enum: [processed, ignored]
-      duplicate:
-        type: boolean
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+    BillingWebhookResponse:
+      type: object
+      additionalProperties: false
+      required: [status, duplicate]
+      properties:
+        status:
+          type: string
+          enum: [processed, ignored]
+        duplicate:
+          type: boolean
     Server:
       type: string
       enum: [west, east, europe]
