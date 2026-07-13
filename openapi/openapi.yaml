@@ -30,6 +30,8 @@ tags:
     description: Lectura pública de historial de mercado.
   - name: Ingest
     description: Ingesta interna autenticada e idempotente.
+  - name: Accounts
+    description: Perfil autenticado, suscripción y entitlements efectivos.
 paths:
   /healthz:
     get:
@@ -134,6 +136,93 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/me:
+    get:
+      tags: [Accounts]
+      operationId: getCurrentAccount
+      security:
+        - userBearer: []
+      summary: Consultar el perfil y acceso efectivo del usuario autenticado
+      description: Sincroniza el usuario identificado por el claim `sub` y devuelve su plan y entitlements efectivos.
+      responses:
+        '200':
+          description: Perfil, suscripción efectiva y entitlements resueltos.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountAccess'
+        '401':
+          description: Access token ausente, mal formado, inválido o expirado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedGet'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          description: La autenticación de usuarios todavía no está habilitada en el runtime.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: authentication unavailable
+
+  /api/v1/me/entitlements:
+    get:
+      tags: [Accounts]
+      operationId: getCurrentEntitlements
+      security:
+        - userBearer: []
+      summary: Consultar la suscripción y los entitlements efectivos
+      responses:
+        '200':
+          description: Suscripción efectiva y mapa de entitlements del usuario.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountEntitlementsResponse'
+        '401':
+          description: Access token ausente, mal formado, inválido o expirado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/OriginNotAllowed'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowedGet'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          description: La autenticación de usuarios todavía no está habilitada en el runtime.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: authentication unavailable
 
   /api/v1/status:
     get:
@@ -570,6 +659,11 @@ components:
       scheme: bearer
       bearerFormat: opaque
       description: Token interno configurado para el receiver/forwarder.
+    userBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token Auth0 firmado con RS256 y validado mediante JWKS.
 
   parameters:
     ServerQuery:
@@ -826,6 +920,66 @@ components:
             request_id: 00112233-4455-6677-8899-aabbccddeeff
 
   schemas:
+    AccountUser:
+      type: object
+      required: [id, email, displayName, createdAt, updatedAt, lastLoginAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: [string, 'null']
+          format: email
+        displayName:
+          type: [string, 'null']
+          maxLength: 160
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type: [string, 'null']
+          format: date-time
+    AccountSubscription:
+      type: object
+      required: [plan, status, accessUntil]
+      properties:
+        plan:
+          type: string
+          enum: [free, pro, guild]
+        status:
+          type: string
+          enum: [none, trialing, active, past_due, canceled, expired]
+        accessUntil:
+          type: [string, 'null']
+          format: date-time
+    EntitlementMap:
+      type: object
+      additionalProperties: true
+      examples:
+        - history.max_days: 28
+          optimizer.liquidity: true
+          exports.csv: true
+    AccountAccess:
+      type: object
+      required: [user, subscription, entitlements]
+      properties:
+        user:
+          $ref: '#/components/schemas/AccountUser'
+        subscription:
+          $ref: '#/components/schemas/AccountSubscription'
+        entitlements:
+          $ref: '#/components/schemas/EntitlementMap'
+    AccountEntitlementsResponse:
+      type: object
+      required: [subscription, entitlements]
+      properties:
+        subscription:
+          $ref: '#/components/schemas/AccountSubscription'
+        entitlements:
+          $ref: '#/components/schemas/EntitlementMap'
     Server:
       type: string
       enum: [west, east, europe]
