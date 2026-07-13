@@ -104,13 +104,38 @@ jobs:
           image-ref: ${{ env.SCAN_IMAGE }}
           scan-type: image
           scanners: vuln
-          format: table
-          exit-code: '1'
+          format: json
+          output: trivy-results.json
+          exit-code: '0'
           ignore-unfixed: true
           pkg-types: os,library
           severity: CRITICAL,HIGH
           version: v0.72.0
           cache: true
+
+      - name: Upload Trivy results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results-${{ github.run_id }}
+          path: trivy-results.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce vulnerability gate
+        shell: bash
+        run: |
+          jq -r '
+            .Results[]?
+            | .Target as $target
+            | .Vulnerabilities[]?
+            | "\($target): \(.VulnerabilityID) | \(.PkgName) \(.InstalledVersion) -> \(.FixedVersion) | \(.Severity)"
+          ' trivy-results.json
+
+          if ! jq -e '[.Results[]?.Vulnerabilities[]?] | length == 0' trivy-results.json >/dev/null; then
+            echo "The production image contains fixed HIGH or CRITICAL vulnerabilities."
+            exit 1
+          fi
 
       - name: Build and test secure Compose deployment
         shell: pwsh
