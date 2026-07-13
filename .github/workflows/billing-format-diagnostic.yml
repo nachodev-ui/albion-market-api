@@ -9,19 +9,31 @@ permissions:
   contents: read
 
 jobs:
-  gofmt-patch:
+  billing-diagnostics:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Format Go sources
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Generate formatting patch
         run: |
           gofmt -w .
           git diff --binary > gofmt.patch
-      - name: Upload formatting patch
+      - name: Capture contract diagnostics
+        run: go test ./internal/contracts -run TestOpenAPI -count=1 > contracts.log 2>&1 || true
+      - name: Capture Go test diagnostics
+        run: go test ./... > go-test.log 2>&1 || true
+      - name: Upload diagnostic bundle
         uses: actions/upload-artifact@v4
         with:
-          name: billing-gofmt-patch
-          path: gofmt.patch
+          name: billing-diagnostics
+          path: |
+            gofmt.patch
+            contracts.log
+            go-test.log
           if-no-files-found: error
           retention-days: 1
