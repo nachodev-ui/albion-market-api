@@ -26,23 +26,23 @@ var (
 )
 
 type ServiceConfig struct {
-	ProviderName      string
-	StoreID           string
-	VariantID         string
-	ExpectedTestMode  bool
+	ProviderName       string
+	StoreID            string
+	VariantID          string
+	ExpectedTestMode   bool
 	PastDueGracePeriod time.Duration
 }
 
 type Service struct {
-	db                  *pgxpool.Pool
-	accounts            *accounts.Service
-	provider            Provider
-	providerName        string
-	storeID             string
-	variantID           string
-	expectedTestMode    bool
-	pastDueGracePeriod  time.Duration
-	now                 func() time.Time
+	db                 *pgxpool.Pool
+	accounts           *accounts.Service
+	provider           Provider
+	providerName       string
+	storeID            string
+	variantID          string
+	expectedTestMode   bool
+	pastDueGracePeriod time.Duration
+	now                func() time.Time
 }
 
 func NewService(
