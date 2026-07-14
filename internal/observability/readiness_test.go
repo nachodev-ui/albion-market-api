@@ -61,6 +61,7 @@ func TestRequiredReadinessRelationsContainAccountAdminSchema(t *testing.T) {
 	required := map[string]bool{
 		"public.app_schema_state":           false,
 		"public.account_admin_audit_events": false,
+		"public.app_admins":                 false,
 	}
 	for _, relation := range requiredReadinessRelations {
 		if _, exists := required[relation]; exists {
@@ -72,7 +73,7 @@ func TestRequiredReadinessRelationsContainAccountAdminSchema(t *testing.T) {
 			t.Fatalf("readiness relations do not include %s", relation)
 		}
 	}
-	if ExpectedSchemaVersion != 11 {
-		t.Fatalf("ExpectedSchemaVersion = %d, want 11", ExpectedSchemaVersion)
+	if ExpectedSchemaVersion != 12 {
+		t.Fatalf("ExpectedSchemaVersion = %d, want 12", ExpectedSchemaVersion)
 	}
 }
