@@ -60,6 +60,20 @@ func (s *Service) Current(ctx context.Context, identity authn.Identity) (Current
 	if err != nil {
 		return CurrentResponse{}, err
 	}
+
+	// Migration 0014 could only backfill the historical weapon_type column. Profiles
+	// first cached before that release therefore contain one player weapon and no
+	// opponent loadout. Rehydrate that legacy cache once the cooldown window has
+	// elapsed so merely opening the profile repairs the incomplete presentation.
+	if snapshotNeedsEquipmentRefresh(snapshot) && refreshWindowElapsed(snapshot.Profile, s.now().UTC(), s.cooldown) {
+		player, events, fetchErr := s.fetchSnapshot(ctx, snapshot.Profile.Server, snapshot.Profile.PlayerID)
+		if fetchErr == nil {
+			if refreshed, saveErr := s.repository.Save(ctx, userID, player, events, s.now().UTC()); saveErr == nil {
+				snapshot = refreshed
+			}
+		}
+	}
+
 	return responseFromSnapshot(snapshot), nil
 }
 
@@ -144,6 +158,54 @@ func (s *Service) fetchSnapshot(ctx context.Context, server Server, playerID str
 		return Player{}, nil, fmt.Errorf("fetch Albion activity: %w", err)
 	}
 	return player, events, nil
+}
+
+func refreshWindowElapsed(profile Profile, now time.Time, cooldown time.Duration) bool {
+	if profile.LastRefreshAttempt == nil {
+		return true
+	}
+	return !now.Before(profile.LastRefreshAttempt.Add(cooldown))
+}
+
+func snapshotNeedsEquipmentRefresh(snapshot Snapshot) bool {
+	if len(snapshot.Events) == 0 {
+		return false
+	}
+
+	legacySignal := false
+	for _, event := range snapshot.Events {
+		playerSlots := equipmentSlotCount(event.PlayerEquipment)
+		opponentSlots := equipmentSlotCount(event.OpponentEquipment)
+		if playerSlots > 1 || opponentSlots > 0 {
+			return false
+		}
+		if playerSlots == 1 || event.WeaponType != nil {
+			legacySignal = true
+		}
+	}
+	return legacySignal
+}
+
+func equipmentSlotCount(equipment Equipment) int {
+	items := []*string{
+		equipment.MainHand,
+		equipment.OffHand,
+		equipment.Head,
+		equipment.Armor,
+		equipment.Shoes,
+		equipment.Bag,
+		equipment.Cape,
+		equipment.Mount,
+		equipment.Potion,
+		equipment.Food,
+	}
+	count := 0
+	for _, item := range items {
+		if item != nil && strings.TrimSpace(*item) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func responseFromSnapshot(snapshot Snapshot) CurrentResponse {
