@@ -1,0 +1,63 @@
+name: Export source and probe Albion API
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: github.head_ref == 'feat/albion-player-profile'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe public Albion gameinfo endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/probe
+          python3 - <<'PY'
+          import json, urllib.parse, urllib.request
+          servers = {
+            'americas': 'https://gameinfo.albiononline.com/api/gameinfo',
+            'europe': 'https://gameinfo-ams.albiononline.com/api/gameinfo',
+            'asia': 'https://gameinfo-sgp.albiononline.com/api/gameinfo',
+          }
+          for server, base in servers.items():
+              try:
+                  with urllib.request.urlopen(base + '/search?q=' + urllib.parse.quote('Equart'), timeout=20) as response:
+                      data = json.load(response)
+                  with open(f'artifacts/probe/{server}-search.json', 'w', encoding='utf-8') as handle:
+                      json.dump(data, handle, ensure_ascii=False, indent=2)
+                  players = data.get('players') or data.get('Players') or []
+                  if players:
+                      player_id = players[0].get('Id') or players[0].get('id')
+                      for suffix, filename in [
+                          (f'/players/{player_id}', 'player'),
+                          (f'/players/{player_id}/kills?limit=5&offset=0', 'kills'),
+                          (f'/players/{player_id}/deaths?limit=5&offset=0', 'deaths'),
+                      ]:
+                          try:
+                              with urllib.request.urlopen(base + suffix, timeout=20) as response:
+                                  payload = json.load(response)
+                              with open(f'artifacts/probe/{server}-{filename}.json', 'w', encoding='utf-8') as handle:
+                                  json.dump(payload, handle, ensure_ascii=False, indent=2)
+                          except Exception as exc:
+                              with open(f'artifacts/probe/{server}-{filename}-error.txt', 'w', encoding='utf-8') as handle:
+                                  handle.write(type(exc).__name__ + ': ' + str(exc))
+              except Exception as exc:
+                  with open(f'artifacts/probe/{server}-search-error.txt', 'w', encoding='utf-8') as handle:
+                      handle.write(type(exc).__name__ + ': ' + str(exc))
+          PY
+      - name: Export repository source
+        shell: bash
+        run: |
+          tar --exclude=.git --exclude=artifacts/source.tar.gz -czf artifacts/source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-and-albion-probe
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 2
