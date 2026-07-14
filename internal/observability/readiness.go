@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const ExpectedSchemaVersion = 9
+const ExpectedSchemaVersion = 10
 
 const (
 	ReadinessComponentPool     = "database_pool"

@@ -68,7 +68,7 @@ func TestRequiredReadinessRelationsContainSchemaMarker(t *testing.T) {
 	if !found {
 		t.Fatal("readiness relations do not include public.app_schema_state")
 	}
-	if ExpectedSchemaVersion != 9 {
-		t.Fatalf("ExpectedSchemaVersion = %d, want 9", ExpectedSchemaVersion)
+	if ExpectedSchemaVersion != 10 {
+		t.Fatalf("ExpectedSchemaVersion = %d, want 10", ExpectedSchemaVersion)
 	}
 }
