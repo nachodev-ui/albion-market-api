@@ -73,7 +73,7 @@ func TestRequiredReadinessRelationsContainAccountAdminSchema(t *testing.T) {
 			t.Fatalf("readiness relations do not include %s", relation)
 		}
 	}
-	if ExpectedSchemaVersion != 13 {
-		t.Fatalf("ExpectedSchemaVersion = %d, want 13", ExpectedSchemaVersion)
+	if ExpectedSchemaVersion != 14 {
+		t.Fatalf("ExpectedSchemaVersion = %d, want 14", ExpectedSchemaVersion)
 	}
 }
