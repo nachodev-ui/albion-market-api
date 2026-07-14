@@ -78,9 +78,10 @@ func TestGrantProUsesJWTSubjectAsActor(t *testing.T) {
 	handler := NewHandler(service)
 	body := `{"durationDays":30,"reason":"Acceso beta aprobado","confirmation":"GRANT PRO"}`
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/7d6fd4e1-02c9-46f6-a98a-437fa77ea36d/grant-pro", strings.NewReader(body))
+	request.SetPathValue("userId", "7d6fd4e1-02c9-46f6-a98a-437fa77ea36d")
 	request = request.WithContext(authn.WithIdentity(request.Context(), authn.Identity{Subject: "google-oauth2|administrator"}))
 	response := httptest.NewRecorder()
-	handler.User(response, request)
+	handler.GrantPro(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
 	}
@@ -94,9 +95,10 @@ func TestHandlerMapsInvalidRequestToBadRequest(t *testing.T) {
 	service := &fakeService{grantErr: fmt.Errorf("%w: invalid duration", ErrInvalidRequest)}
 	handler := NewHandler(service)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/7d6fd4e1-02c9-46f6-a98a-437fa77ea36d/grant-pro", strings.NewReader(`{"durationDays":0}`))
+	request.SetPathValue("userId", "7d6fd4e1-02c9-46f6-a98a-437fa77ea36d")
 	request = request.WithContext(authn.WithIdentity(request.Context(), authn.Identity{Subject: "auth0|admin"}))
 	response := httptest.NewRecorder()
-	handler.User(response, request)
+	handler.GrantPro(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
 	}
