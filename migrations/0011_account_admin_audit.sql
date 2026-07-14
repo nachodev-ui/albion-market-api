@@ -24,15 +24,13 @@ create index if not exists account_admin_audit_user_created_idx
 create index if not exists account_admin_audit_action_created_idx
     on account_admin_audit_events (action, created_at desc);
 
-create or replace function reject_account_admin_audit_mutation()
-returns trigger
-language plpgsql
-as 'begin raise exception ''account_admin_audit_events is append-only''; end;';
+create or replace rule account_admin_audit_no_update as
+on update to account_admin_audit_events
+do instead nothing;
 
-drop trigger if exists account_admin_audit_append_only on account_admin_audit_events;
-create trigger account_admin_audit_append_only
-before update or delete on account_admin_audit_events
-for each row execute function reject_account_admin_audit_mutation();
+create or replace rule account_admin_audit_no_delete as
+on delete to account_admin_audit_events
+do instead nothing;
 
 update app_schema_state
 set version = greatest(version, 11), updated_at = now()
