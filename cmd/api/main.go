@@ -14,9 +14,11 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/accounts"
 	"github.com/nachodev-ui/albion-market-api/internal/authn"
 	"github.com/nachodev-ui/albion-market-api/internal/billing"
+	"github.com/nachodev-ui/albion-market-api/internal/blackmarket"
 	"github.com/nachodev-ui/albion-market-api/internal/config"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
+	"github.com/nachodev-ui/albion-market-api/internal/marketcatalog"
 	"github.com/nachodev-ui/albion-market-api/internal/observability"
 	"github.com/nachodev-ui/albion-market-api/internal/playerprofile"
 	"github.com/nachodev-ui/albion-market-api/internal/repository"
@@ -82,6 +84,8 @@ func main() {
 	svc := service.NewMarketService(repo)
 	accountService := accounts.NewService(dbpool)
 	accountHandler := accounts.NewHandler(accountService)
+	blackMarketService := blackmarket.NewService(dbpool, marketcatalog.NewDefault())
+	blackMarketHandler := blackmarket.NewHandler(blackMarketService, cfg.MaxPublicBodyBytes)
 	profileRepository, err := playerprofile.NewPostgresRepository(dbpool)
 	if err != nil {
 		logger.Error("player_profile.repository_configure_failed", observability.F("error", err))
@@ -223,8 +227,10 @@ func main() {
 		},
 		server.AccountRoutes{
 			Handler:              accountHandler,
+			Service:              accountService,
 			BillingHandler:       billingHandler,
 			PlayerProfileHandler: profileHandler,
+			BlackMarketHandler:   blackMarketHandler,
 			Authenticator:        accountAuthenticator,
 		},
 	)
@@ -254,6 +260,7 @@ func main() {
 			observability.F("prices_query", "/api/v1/prices/query"),
 			observability.F("history", "/api/v1/history"),
 			observability.F("history_query", "/api/v1/history/query"),
+			observability.F("black_market_analysis", "/api/v1/black-market/analysis"),
 			observability.F("account_me", "/api/v1/me"),
 			observability.F("account_entitlements", "/api/v1/me/entitlements"),
 			observability.F("auth_enabled", authCfg.Enabled),

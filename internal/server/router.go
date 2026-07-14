@@ -5,6 +5,7 @@ import (
 
 	"github.com/nachodev-ui/albion-market-api/internal/accounts"
 	"github.com/nachodev-ui/albion-market-api/internal/billing"
+	"github.com/nachodev-ui/albion-market-api/internal/blackmarket"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 	"github.com/nachodev-ui/albion-market-api/internal/playerprofile"
 )
@@ -16,8 +17,10 @@ type AccountAuthenticator interface {
 
 type AccountRoutes struct {
 	Handler              *accounts.Handler
+	Service              *accounts.Service
 	BillingHandler       *billing.Handler
 	PlayerProfileHandler *playerprofile.Handler
+	BlackMarketHandler   *blackmarket.Handler
 	Authenticator        AccountAuthenticator
 }
 
@@ -83,6 +86,18 @@ func NewRouter(
 			mux.HandleFunc("/api/v1/billing/checkout", billingHandler.Checkout)
 			mux.HandleFunc("/api/v1/billing/portal", billingHandler.Portal)
 			mux.HandleFunc("/api/v1/webhooks/lemonsqueezy", billingHandler.Webhook)
+		}
+		if routes.BlackMarketHandler != nil && routes.Service != nil && routes.Authenticator != nil {
+			protected := routes.Authenticator.RequireScope(
+				"read:account",
+				accounts.RequireEntitlement(
+					routes.Service,
+					blackmarket.EntitlementKey,
+					accounts.BoolEnabled,
+					http.HandlerFunc(routes.BlackMarketHandler.Analyze),
+				),
+			)
+			mux.Handle("/api/v1/black-market/analysis", protected)
 		}
 	}
 
