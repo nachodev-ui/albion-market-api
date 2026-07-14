@@ -18,17 +18,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - name: Dispatch production workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run deploy-production.yml --ref main -f confirm=DEPLOY
-
-      - name: Wait for production workflow and publish status
+      - name: Deploy and publish commit status
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions"
+
+          publish_status() {
+            local state="$1"
+            local description="$2"
+            gh api \
+              --method POST \
+              "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+              -f state="${state}" \
+              -f context='deploy/render-production' \
+              -f description="${description}" \
+              -f target_url="${target_url}" \
+              > /dev/null
+          }
+
+          finish() {
+            local result=$?
+            trap - EXIT
+            if [[ "${result}" -ne 0 ]]; then
+              publish_status failure 'Render production deployment failed' || true
+            fi
+            exit "${result}"
+          }
+          trap finish EXIT
+
+          publish_status pending 'Render production deployment in progress'
+          gh workflow run deploy-production.yml --ref main -f confirm=DEPLOY
+
           run_id=''
           for attempt in $(seq 1 60); do
             run_id="$(gh run list \
@@ -50,26 +73,7 @@ jobs:
             exit 1
           fi
 
-          set +e
+          target_url="$(gh run view "${run_id}" --json url --jq '.url')"
           gh run watch "${run_id}" --exit-status
-          watch_result=$?
-          set -e
-
-          run_url="$(gh run view "${run_id}" --json url --jq '.url')"
-          state='failure'
-          description='Render production deployment failed'
-          if [[ "${watch_result}" -eq 0 ]]; then
-            state='success'
-            description='Render production deployment passed'
-          fi
-
-          gh api \
-            --method POST \
-            "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
-            -f state="${state}" \
-            -f context='deploy/render-production' \
-            -f description="${description}" \
-            -f target_url="${run_url}" \
-            > /dev/null
-
-          exit "${watch_result}"
+          publish_status success 'Render production deployment passed'
+          trap - EXIT
