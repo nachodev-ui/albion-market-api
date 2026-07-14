@@ -15,11 +15,48 @@ func NewAuthenticatedPlayerProfileHandler(handler *playerprofile.Handler, authen
 	return &AuthenticatedPlayerProfileHandler{handler: handler, authenticator: authenticator}
 }
 
+func (h *AuthenticatedPlayerProfileHandler) Search(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	h.handler.Search(w, r)
+}
+
 func (h *AuthenticatedPlayerProfileHandler) Current(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	h.serve(w, r, h.handler.Current)
+}
+
+func (h *AuthenticatedPlayerProfileHandler) Link(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		w.Header().Set("Allow", http.MethodPut)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	h.serve(w, r, h.handler.Current)
+}
+
+func (h *AuthenticatedPlayerProfileHandler) Unlink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.Header().Set("Allow", http.MethodDelete)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	h.serve(w, r, h.handler.Current)
 }
 
 func (h *AuthenticatedPlayerProfileHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	h.serve(w, r, h.handler.Refresh)
 }
 

@@ -47,7 +47,11 @@ func NewRouter(
 	mux.HandleFunc("/api/v1/status", statusHandler.Status)
 
 	if len(accountRoutes) > 0 && accountRoutes[0].PlayerProfileHandler != nil {
-		mux.HandleFunc("/api/v1/albion/players/search", accountRoutes[0].PlayerProfileHandler.Search)
+		profileHandler := handlers.NewAuthenticatedPlayerProfileHandler(
+			accountRoutes[0].PlayerProfileHandler,
+			accountRoutes[0].Authenticator,
+		)
+		mux.HandleFunc("/api/v1/albion/players/search", profileHandler.Search)
 	}
 
 	if len(accountRoutes) > 0 {
@@ -70,6 +74,8 @@ func NewRouter(
 		if routes.PlayerProfileHandler != nil && routes.Authenticator != nil {
 			profileHandler := handlers.NewAuthenticatedPlayerProfileHandler(routes.PlayerProfileHandler, routes.Authenticator)
 			mux.HandleFunc("/api/v1/me/albion-profile", profileHandler.Current)
+			mux.HandleFunc("/api/v1/me/albion-profile/link", profileHandler.Link)
+			mux.HandleFunc("/api/v1/me/albion-profile/unlink", profileHandler.Unlink)
 			mux.HandleFunc("/api/v1/me/albion-profile/refresh", profileHandler.Refresh)
 		}
 		if routes.BillingHandler != nil {

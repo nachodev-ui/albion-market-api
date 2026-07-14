@@ -27,6 +27,8 @@ func TestAlbionPlayerProfileRoutesAreExplicit(t *testing.T) {
 	for _, expected := range []string{
 		`/api/v1/albion/players/search`,
 		`/api/v1/me/albion-profile`,
+		`/api/v1/me/albion-profile/link`,
+		`/api/v1/me/albion-profile/unlink`,
 		`/api/v1/me/albion-profile/refresh`,
 	} {
 		requireContains(t, router, expected)
