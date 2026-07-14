@@ -19,3 +19,18 @@ func TestSecureAdminPanelMigrationContract(t *testing.T) {
 		requireContains(t, migration, expected)
 	}
 }
+
+func TestSecureAdminPanelRoutesAreExplicit(t *testing.T) {
+	t.Parallel()
+	router := readProjectFile(t, "internal", "server", "router.go")
+	for _, expected := range []string{
+		`/api/v1/admin/session`,
+		`/api/v1/admin/users`,
+		`/api/v1/admin/users/{userId}`,
+		`/api/v1/admin/users/{userId}/grant-pro`,
+		`/api/v1/admin/users/{userId}/revoke-pro`,
+		`/api/v1/admin/audit-events`,
+	} {
+		requireContains(t, router, expected)
+	}
+}
