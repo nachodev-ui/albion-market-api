@@ -27,11 +27,7 @@ create index if not exists account_admin_audit_action_created_idx
 create or replace function reject_account_admin_audit_mutation()
 returns trigger
 language plpgsql
-as $$
-begin
-    raise exception 'account_admin_audit_events is append-only';
-end;
-$$;
+as 'begin raise exception ''account_admin_audit_events is append-only''; end;';
 
 drop trigger if exists account_admin_audit_append_only on account_admin_audit_events;
 create trigger account_admin_audit_append_only
