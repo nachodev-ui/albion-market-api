@@ -55,7 +55,9 @@ func NewRouter(
 				adminHandler := handlers.NewAuthenticatedAdminHandler(adminPanelHandler, routes.Authenticator)
 				mux.HandleFunc("/api/v1/admin/session", adminHandler.Session)
 				mux.HandleFunc("/api/v1/admin/users", adminHandler.Users)
-				mux.HandleFunc("/api/v1/admin/users/", adminHandler.User)
+				mux.HandleFunc("/api/v1/admin/users/{userId}", adminHandler.UserDetail)
+				mux.HandleFunc("/api/v1/admin/users/{userId}/grant-pro", adminHandler.GrantPro)
+				mux.HandleFunc("/api/v1/admin/users/{userId}/revoke-pro", adminHandler.RevokePro)
 				mux.HandleFunc("/api/v1/admin/audit-events", adminHandler.AuditEvents)
 			}
 		}
