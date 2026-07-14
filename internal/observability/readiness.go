@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const ExpectedSchemaVersion = 14
+const ExpectedSchemaVersion = 15
 
 const (
 	ReadinessComponentPool     = "database_pool"
@@ -85,7 +85,6 @@ func (m *ReadinessMetrics) Observe(snapshot ReadinessSnapshot) {
 	if !snapshot.Ready {
 		result = "error"
 	}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ready = snapshot.Ready
