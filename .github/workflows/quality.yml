@@ -87,3 +87,6 @@ jobs:
 
       - name: Build API
         run: go build -o /tmp/albion-market-api ./cmd/api
+
+      - name: Build account administration CLI
+        run: go build -o /tmp/account-admin ./cmd/account-admin
