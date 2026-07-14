@@ -83,7 +83,19 @@ jobs:
         run: go vet ./...
 
       - name: Test with race detector
-        run: go test -race ./...
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -race ./... 2>&1 | tee /tmp/go-test-output.txt
+
+      - name: Upload temporary test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-panel-go-test-output
+          path: /tmp/go-test-output.txt
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Build API
         run: go build -o /tmp/albion-market-api ./cmd/api
