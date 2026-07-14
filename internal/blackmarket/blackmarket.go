@@ -18,13 +18,13 @@ import (
 )
 
 const (
-	EntitlementKey       = "black_market.analytics"
-	blackMarketLocation  = int16(3003)
-	defaultHistoryDays   = 28
-	maximumHistoryDays   = 90
-	defaultSalesTaxRate  = 0.04
-	maximumRequestBody   = int64(32 * 1024)
-	freshPriceWindow     = 24 * time.Hour
+	EntitlementKey      = "black_market.analytics"
+	blackMarketLocation = int16(3003)
+	defaultHistoryDays  = 28
+	maximumHistoryDays  = 90
+	defaultSalesTaxRate = 0.04
+	maximumRequestBody  = int64(32 * 1024)
+	freshPriceWindow    = 24 * time.Hour
 )
 
 type AnalysisRequest struct {
@@ -40,11 +40,11 @@ type AnalysisRequest struct {
 }
 
 type PriceSnapshot struct {
-	MarketKey    string     `json:"marketKey"`
-	UnitPrice    *int64     `json:"unitPrice"`
-	PriceDate    *time.Time `json:"priceDate"`
-	UpdatedAt    *time.Time `json:"updatedAt"`
-	Freshness    string     `json:"freshness"`
+	MarketKey string     `json:"marketKey"`
+	UnitPrice *int64     `json:"unitPrice"`
+	PriceDate *time.Time `json:"priceDate"`
+	UpdatedAt *time.Time `json:"updatedAt"`
+	Freshness string     `json:"freshness"`
 }
 
 type HistoryPoint struct {
@@ -54,9 +54,9 @@ type HistoryPoint struct {
 }
 
 type HistorySummary struct {
-	RangeDays        int            `json:"rangeDays"`
-	BucketCount      int            `json:"bucketCount"`
-	SoldUnits        int64          `json:"soldUnits"`
+	RangeDays       int            `json:"rangeDays"`
+	BucketCount     int            `json:"bucketCount"`
+	SoldUnits       int64          `json:"soldUnits"`
 	WeightedAverage *int64         `json:"weightedAverageUnitPrice"`
 	LowestAverage   *int64         `json:"lowestAverageUnitPrice"`
 	HighestAverage  *int64         `json:"highestAverageUnitPrice"`
@@ -65,21 +65,21 @@ type HistorySummary struct {
 }
 
 type Economics struct {
-	Ready              bool    `json:"ready"`
-	Quantity           int64   `json:"quantity"`
-	PurchaseUnitPrice  *int64  `json:"purchaseUnitPrice"`
-	SaleUnitPrice      *int64  `json:"saleUnitPrice"`
-	SalePriceSource    string  `json:"salePriceSource"`
-	PurchaseCost       *int64  `json:"purchaseCost"`
-	GrossRevenue       *int64  `json:"grossRevenue"`
-	SalesTax           *int64  `json:"salesTax"`
-	TransportCost      int64   `json:"transportCost"`
-	NetRevenue         *int64  `json:"netRevenue"`
-	Profit              *int64  `json:"profit"`
-	ProfitPerUnit       *int64  `json:"profitPerUnit"`
+	Ready               bool     `json:"ready"`
+	Quantity            int64    `json:"quantity"`
+	PurchaseUnitPrice   *int64   `json:"purchaseUnitPrice"`
+	SaleUnitPrice       *int64   `json:"saleUnitPrice"`
+	SalePriceSource     string   `json:"salePriceSource"`
+	PurchaseCost        *int64   `json:"purchaseCost"`
+	GrossRevenue        *int64   `json:"grossRevenue"`
+	SalesTax            *int64   `json:"salesTax"`
+	TransportCost       int64    `json:"transportCost"`
+	NetRevenue          *int64   `json:"netRevenue"`
+	Profit              *int64   `json:"profit"`
+	ProfitPerUnit       *int64   `json:"profitPerUnit"`
 	MarginPercent       *float64 `json:"marginPercent"`
 	ReturnOnCostPercent *float64 `json:"returnOnCostPercent"`
-	BreakEvenUnitPrice  *int64  `json:"breakEvenUnitPrice"`
+	BreakEvenUnitPrice  *int64   `json:"breakEvenUnitPrice"`
 }
 
 type AnalysisResponse struct {
