@@ -520,6 +520,35 @@ paths:
         '405':
           $ref: '#/components/responses/MethodNotAllowedGet'
 
+  /api/v1/albion/players/search:
+    get:
+      operationId: searchAlbionPlayers
+      responses:
+        '200':
+          description: Public player search results.
+  /api/v1/me/albion-profile:
+    get:
+      operationId: getMyAlbionProfile
+      responses:
+        '200':
+          description: Linked player profile.
+    put:
+      operationId: linkMyAlbionProfile
+      responses:
+        '200':
+          description: Player profile linked.
+    delete:
+      operationId: unlinkMyAlbionProfile
+      responses:
+        '204':
+          description: Player profile removed.
+  /api/v1/me/albion-profile/refresh:
+    post:
+      operationId: refreshMyAlbionProfile
+      responses:
+        '200':
+          description: Player profile refreshed.
+
   /api/v1/billing/checkout:
     post:
       tags: [Billing]
