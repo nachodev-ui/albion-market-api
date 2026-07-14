@@ -2,6 +2,7 @@ package playerprofile
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -60,7 +61,8 @@ func (r *PostgresRepository) Get(ctx context.Context, userID string) (Snapshot, 
 	const eventsQuery = `
 		select event_id, occurred_at, result, opponent_id, opponent_name,
 			opponent_guild, kill_fame, player_item_power, opponent_item_power,
-			weapon_type, participant_count, group_member_count
+			weapon_type, player_equipment::text, opponent_equipment::text,
+			participant_count, group_member_count
 		from albion_player_events
 		where profile_id = $1::uuid
 		order by occurred_at desc, event_id desc
@@ -74,13 +76,22 @@ func (r *PostgresRepository) Get(ctx context.Context, userID string) (Snapshot, 
 	events := make([]Event, 0)
 	for rows.Next() {
 		var event Event
+		var playerEquipmentJSON string
+		var opponentEquipmentJSON string
 		if err := rows.Scan(
 			&event.EventID, &event.OccurredAt, &event.Result, &event.OpponentID,
 			&event.OpponentName, &event.OpponentGuild, &event.KillFame,
 			&event.PlayerItemPower, &event.OpponentItemPower, &event.WeaponType,
+			&playerEquipmentJSON, &opponentEquipmentJSON,
 			&event.ParticipantCount, &event.GroupMemberCount,
 		); err != nil {
 			return Snapshot{}, fmt.Errorf("scan Albion event: %w", err)
+		}
+		if err := json.Unmarshal([]byte(playerEquipmentJSON), &event.PlayerEquipment); err != nil {
+			return Snapshot{}, fmt.Errorf("decode player equipment: %w", err)
+		}
+		if err := json.Unmarshal([]byte(opponentEquipmentJSON), &event.OpponentEquipment); err != nil {
+			return Snapshot{}, fmt.Errorf("decode opponent equipment: %w", err)
 		}
 		events = append(events, event)
 	}
