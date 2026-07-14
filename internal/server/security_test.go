@@ -58,6 +58,34 @@ func TestCORSAllowsConfiguredOrigin(t *testing.T) {
 	if got := response.Header().Get("Access-Control-Expose-Headers"); got != "X-Request-ID" {
 		t.Fatalf("expose headers = %q", got)
 	}
+	if got := response.Header().Get("Access-Control-Allow-Methods"); got != "GET, POST, PUT, DELETE, OPTIONS" {
+		t.Fatalf("allow methods = %q", got)
+	}
+}
+
+func TestCORSAllowsPlayerProfileMutationPreflights(t *testing.T) {
+	t.Parallel()
+
+	handler := withCORS(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("preflight request reached wrapped handler")
+	}), []string{"https://app.example.com"})
+
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		method := method
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			request := httptest.NewRequest(http.MethodOptions, "/api/v1/me/albion-profile", nil)
+			request.Header.Set("Origin", "https://app.example.com")
+			request.Header.Set("Access-Control-Request-Method", method)
+			request.Header.Set("Access-Control-Request-Headers", "authorization,content-type")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusNoContent {
+				t.Fatalf("%s preflight status = %d, want %d; body=%s", method, response.Code, http.StatusNoContent, response.Body.String())
+			}
+		})
+	}
 }
 
 func TestCORSRejectsUnknownOrigin(t *testing.T) {

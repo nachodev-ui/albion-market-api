@@ -75,12 +75,12 @@ func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 		}
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID")
 		w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Max-Age", "600")
 
 		if r.Method == http.MethodOptions {
 			requestedMethod := strings.ToUpper(strings.TrimSpace(r.Header.Get("Access-Control-Request-Method")))
-			if requestedMethod != "" && requestedMethod != http.MethodGet && requestedMethod != http.MethodPost {
+			if requestedMethod != "" && requestedMethod != http.MethodGet && requestedMethod != http.MethodPost && requestedMethod != http.MethodPut && requestedMethod != http.MethodDelete {
 				writeServerJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 				return
 			}
