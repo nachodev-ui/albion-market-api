@@ -21,6 +21,7 @@ jobs:
       - name: Deploy and publish commit status
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -Eeuo pipefail
