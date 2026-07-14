@@ -2,6 +2,7 @@ package playerprofile
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -62,15 +63,25 @@ func (r *PostgresRepository) Save(ctx context.Context, userID string, player Pla
 		insert into albion_player_events (
 			profile_id, event_id, occurred_at, result, opponent_id, opponent_name,
 			opponent_guild, kill_fame, player_item_power, opponent_item_power,
-			weapon_type, participant_count, group_member_count
-		) values ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			weapon_type, player_equipment, opponent_equipment,
+			participant_count, group_member_count
+		) values ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14,$15)
 		on conflict (profile_id, event_id, result) do nothing
 	`
 	for _, event := range events {
+		playerEquipmentJSON, err := json.Marshal(event.PlayerEquipment)
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("encode player equipment: %w", err)
+		}
+		opponentEquipmentJSON, err := json.Marshal(event.OpponentEquipment)
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("encode opponent equipment: %w", err)
+		}
 		if _, err := tx.Exec(ctx, insertEvent, profileID, event.EventID, event.OccurredAt,
 			event.Result, event.OpponentID, event.OpponentName, event.OpponentGuild,
 			event.KillFame, event.PlayerItemPower, event.OpponentItemPower,
-			event.WeaponType, event.ParticipantCount, event.GroupMemberCount); err != nil {
+			event.WeaponType, playerEquipmentJSON, opponentEquipmentJSON,
+			event.ParticipantCount, event.GroupMemberCount); err != nil {
 			return Snapshot{}, fmt.Errorf("insert Albion event: %w", err)
 		}
 	}
