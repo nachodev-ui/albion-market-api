@@ -50,6 +50,16 @@ func NewRouter(
 			accountHandler := handlers.NewAuthenticatedAccountHandler(routes.Handler, routes.Authenticator)
 			mux.HandleFunc("/api/v1/me", accountHandler.Me)
 			mux.HandleFunc("/api/v1/me/entitlements", accountHandler.Entitlements)
+
+			if adminPanelHandler := routes.Handler.AdminHandler(); adminPanelHandler != nil {
+				adminHandler := handlers.NewAuthenticatedAdminHandler(adminPanelHandler, routes.Authenticator)
+				mux.HandleFunc("/api/v1/admin/session", adminHandler.Session)
+				mux.HandleFunc("/api/v1/admin/users", adminHandler.Users)
+				mux.HandleFunc("/api/v1/admin/users/{userId}", adminHandler.UserDetail)
+				mux.HandleFunc("/api/v1/admin/users/{userId}/grant-pro", adminHandler.GrantPro)
+				mux.HandleFunc("/api/v1/admin/users/{userId}/revoke-pro", adminHandler.RevokePro)
+				mux.HandleFunc("/api/v1/admin/audit-events", adminHandler.AuditEvents)
+			}
 		}
 		if routes.BillingHandler != nil {
 			billingHandler := handlers.NewAuthenticatedBillingHandler(routes.BillingHandler, routes.Authenticator)
