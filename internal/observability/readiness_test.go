@@ -55,20 +55,24 @@ func TestReadinessMetricsBoundsFailureComponents(t *testing.T) {
 	}
 }
 
-func TestRequiredReadinessRelationsContainSchemaMarker(t *testing.T) {
+func TestRequiredReadinessRelationsContainAccountAdminSchema(t *testing.T) {
 	t.Parallel()
 
-	found := false
+	required := map[string]bool{
+		"public.app_schema_state":           false,
+		"public.account_admin_audit_events": false,
+	}
 	for _, relation := range requiredReadinessRelations {
-		if relation == "public.app_schema_state" {
-			found = true
-			break
+		if _, exists := required[relation]; exists {
+			required[relation] = true
 		}
 	}
-	if !found {
-		t.Fatal("readiness relations do not include public.app_schema_state")
+	for relation, found := range required {
+		if !found {
+			t.Fatalf("readiness relations do not include %s", relation)
+		}
 	}
-	if ExpectedSchemaVersion != 10 {
-		t.Fatalf("ExpectedSchemaVersion = %d, want 10", ExpectedSchemaVersion)
+	if ExpectedSchemaVersion != 11 {
+		t.Fatalf("ExpectedSchemaVersion = %d, want 11", ExpectedSchemaVersion)
 	}
 }
