@@ -6,6 +6,7 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/accounts"
 	"github.com/nachodev-ui/albion-market-api/internal/billing"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
+	"github.com/nachodev-ui/albion-market-api/internal/playerprofile"
 )
 
 type AccountAuthenticator interface {
@@ -14,9 +15,10 @@ type AccountAuthenticator interface {
 }
 
 type AccountRoutes struct {
-	Handler        *accounts.Handler
-	BillingHandler *billing.Handler
-	Authenticator  AccountAuthenticator
+	Handler              *accounts.Handler
+	BillingHandler       *billing.Handler
+	PlayerProfileHandler *playerprofile.Handler
+	Authenticator        AccountAuthenticator
 }
 
 func NewRouter(
@@ -44,6 +46,10 @@ func NewRouter(
 	mux.HandleFunc("/api/v1/history/query", historyHandler.QueryMarketHistory)
 	mux.HandleFunc("/api/v1/status", statusHandler.Status)
 
+	if len(accountRoutes) > 0 && accountRoutes[0].PlayerProfileHandler != nil {
+		mux.HandleFunc("/api/v1/albion/players/search", accountRoutes[0].PlayerProfileHandler.Search)
+	}
+
 	if len(accountRoutes) > 0 {
 		routes := accountRoutes[0]
 		if routes.Handler != nil && routes.Authenticator != nil {
@@ -60,6 +66,11 @@ func NewRouter(
 				mux.HandleFunc("/api/v1/admin/users/{userId}/revoke-pro", adminHandler.RevokePro)
 				mux.HandleFunc("/api/v1/admin/audit-events", adminHandler.AuditEvents)
 			}
+		}
+		if routes.PlayerProfileHandler != nil && routes.Authenticator != nil {
+			profileHandler := handlers.NewAuthenticatedPlayerProfileHandler(routes.PlayerProfileHandler, routes.Authenticator)
+			mux.HandleFunc("/api/v1/me/albion-profile", profileHandler.Current)
+			mux.HandleFunc("/api/v1/me/albion-profile/refresh", profileHandler.Refresh)
 		}
 		if routes.BillingHandler != nil {
 			billingHandler := handlers.NewAuthenticatedBillingHandler(routes.BillingHandler, routes.Authenticator)
