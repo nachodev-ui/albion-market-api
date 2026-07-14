@@ -12,11 +12,41 @@ permissions:
   contents: read
 
 jobs:
-  dispatch:
-    name: Dispatch official Render deployment
+  deploy:
+    name: Dispatch and observe official Render deployment
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - name: Dispatch production workflow
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run deploy-production.yml --ref main -f confirm=DEPLOY
+
+      - name: Wait for production workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id=''
+          for attempt in $(seq 1 60); do
+            run_id="$(gh run list \
+              --workflow deploy-production.yml \
+              --event workflow_dispatch \
+              --commit "${GITHUB_SHA}" \
+              --limit 10 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty')"
+            if [[ -n "${run_id}" ]]; then
+              break
+            fi
+            echo "Attempt ${attempt}/60: official deployment is not visible yet."
+            sleep 10
+          done
+
+          if [[ -z "${run_id}" ]]; then
+            echo 'Official production deployment was not found.' >&2
+            exit 1
+          fi
+
+          gh run watch "${run_id}" --exit-status
