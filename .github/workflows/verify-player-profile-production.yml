@@ -1,0 +1,42 @@
+name: Verify player profile production
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.head_ref == 'ops/verify-player-profile-production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify public search
+        shell: bash
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          status="$(curl --silent --show-error --location --max-time 45 --output "$body_file" --write-out '%{http_code}' 'https://albion-market-api.onrender.com/api/v1/albion/players/search?server=americas&name=Equart')"
+          test "$status" = "200"
+          python3 - "$body_file" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as handle:
+              payload = json.load(handle)
+          assert isinstance(payload.get('players'), list)
+          print({'search_status': 200, 'players': len(payload['players'])})
+          PY
+      - name: Verify private route rejects anonymous request
+        shell: bash
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          status="$(curl --silent --show-error --location --max-time 45 --output "$body_file" --write-out '%{http_code}' 'https://albion-market-api.onrender.com/api/v1/me/albion-profile')"
+          test "$status" = "401"
+          python3 - "$body_file" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as handle:
+              payload = json.load(handle)
+          assert 'error' in payload
+          print({'private_status': 401})
+          PY
