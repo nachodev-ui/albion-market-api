@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const ExpectedSchemaVersion = 10
+const ExpectedSchemaVersion = 11
 
 const (
 	ReadinessComponentPool     = "database_pool"
@@ -19,6 +19,7 @@ const (
 )
 
 var requiredReadinessRelations = []string{
+	"public.account_admin_audit_events",
 	"public.app_schema_state",
 	"public.app_users",
 	"public.billing_webhook_events",

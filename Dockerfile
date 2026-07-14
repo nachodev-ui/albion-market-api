@@ -47,7 +47,10 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
       -o /out-healthcheck ./cmd/healthcheck; \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false -ldflags='-s -w' \
-      -o /out-migrate ./cmd/migrate
+      -o /out-migrate ./cmd/migrate; \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -buildvcs=false -ldflags='-s -w' \
+      -o /out-account-admin ./cmd/account-admin
 
 FROM scratch AS runtime
 
@@ -67,6 +70,7 @@ COPY --from=builder /usr/share/zoneinfo/UTC /usr/share/zoneinfo/UTC
 COPY --from=builder /out-albion-market-api /usr/local/bin/albion-market-api
 COPY --from=builder /out-healthcheck /usr/local/bin/healthcheck
 COPY --from=builder /out-migrate /usr/local/bin/migrate
+COPY --from=builder /out-account-admin /usr/local/bin/account-admin
 COPY --from=builder /out-build-metadata.json /usr/local/share/albion-market-api/build-metadata.json
 COPY migrations /migrations
 
