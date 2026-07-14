@@ -175,24 +175,37 @@ func (p *GameInfoProvider) getJSON(ctx context.Context, server Server, path stri
 	return nil
 }
 
+type rawEquipmentItem struct {
+	Type string `json:"Type"`
+}
+
+type rawEquipment struct {
+	MainHand *rawEquipmentItem `json:"MainHand"`
+	OffHand  *rawEquipmentItem `json:"OffHand"`
+	Head     *rawEquipmentItem `json:"Head"`
+	Armor    *rawEquipmentItem `json:"Armor"`
+	Shoes    *rawEquipmentItem `json:"Shoes"`
+	Bag      *rawEquipmentItem `json:"Bag"`
+	Cape     *rawEquipmentItem `json:"Cape"`
+	Mount    *rawEquipmentItem `json:"Mount"`
+	Potion   *rawEquipmentItem `json:"Potion"`
+	Food     *rawEquipmentItem `json:"Food"`
+}
+
 type rawPlayer struct {
-	ID               string  `json:"Id"`
-	Name             string  `json:"Name"`
-	GuildID          string  `json:"GuildId"`
-	GuildName        string  `json:"GuildName"`
-	AllianceID       string  `json:"AllianceId"`
-	AllianceName     string  `json:"AllianceName"`
-	Avatar           string  `json:"Avatar"`
-	AvatarRing       string  `json:"AvatarRing"`
-	KillFame         int64   `json:"KillFame"`
-	DeathFame        int64   `json:"DeathFame"`
-	FameRatio        float64 `json:"FameRatio"`
-	AverageItemPower float64 `json:"AverageItemPower"`
-	Equipment        struct {
-		MainHand *struct {
-			Type string `json:"Type"`
-		} `json:"MainHand"`
-	} `json:"Equipment"`
+	ID               string       `json:"Id"`
+	Name             string       `json:"Name"`
+	GuildID          string       `json:"GuildId"`
+	GuildName        string       `json:"GuildName"`
+	AllianceID       string       `json:"AllianceId"`
+	AllianceName     string       `json:"AllianceName"`
+	Avatar           string       `json:"Avatar"`
+	AvatarRing       string       `json:"AvatarRing"`
+	KillFame         int64        `json:"KillFame"`
+	DeathFame        int64        `json:"DeathFame"`
+	FameRatio        float64      `json:"FameRatio"`
+	AverageItemPower float64      `json:"AverageItemPower"`
+	Equipment        rawEquipment `json:"Equipment"`
 }
 
 type rawEvent struct {
@@ -212,10 +225,7 @@ func normalizeEvent(raw rawEvent, result string, playerIsKiller bool) Event {
 		player = raw.Killer
 		opponent = raw.Victim
 	}
-	var weapon *string
-	if player.Equipment.MainHand != nil {
-		weapon = optionalString(player.Equipment.MainHand.Type)
-	}
+	playerEquipment := normalizeEquipment(player.Equipment)
 	return Event{
 		EventID:           raw.EventID,
 		OccurredAt:        raw.TimeStamp.UTC(),
@@ -226,10 +236,34 @@ func normalizeEvent(raw rawEvent, result string, playerIsKiller bool) Event {
 		KillFame:          raw.TotalVictimKillFame,
 		PlayerItemPower:   player.AverageItemPower,
 		OpponentItemPower: opponent.AverageItemPower,
-		WeaponType:        weapon,
+		WeaponType:        playerEquipment.MainHand,
+		PlayerEquipment:   playerEquipment,
+		OpponentEquipment: normalizeEquipment(opponent.Equipment),
 		ParticipantCount:  raw.NumberOfParticipants,
 		GroupMemberCount:  raw.GroupMemberCount,
 	}
+}
+
+func normalizeEquipment(raw rawEquipment) Equipment {
+	return Equipment{
+		MainHand: equipmentItemType(raw.MainHand),
+		OffHand:  equipmentItemType(raw.OffHand),
+		Head:     equipmentItemType(raw.Head),
+		Armor:    equipmentItemType(raw.Armor),
+		Shoes:    equipmentItemType(raw.Shoes),
+		Bag:      equipmentItemType(raw.Bag),
+		Cape:     equipmentItemType(raw.Cape),
+		Mount:    equipmentItemType(raw.Mount),
+		Potion:   equipmentItemType(raw.Potion),
+		Food:     equipmentItemType(raw.Food),
+	}
+}
+
+func equipmentItemType(item *rawEquipmentItem) *string {
+	if item == nil {
+		return nil
+	}
+	return optionalString(item.Type)
 }
 
 func optionalString(value string) *string {
