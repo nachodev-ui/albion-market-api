@@ -8,3 +8,11 @@ The player-profile API links one public Albion Online character to an authentica
 - Manual refreshes have a five-minute cooldown.
 - The last cached profile and activity remain available when the upstream game-information service fails.
 - Unlinking removes the profile and cached activity through database cascade rules.
+
+## HTTP routes
+
+- `GET /api/v1/albion/players/search`
+- `GET /api/v1/me/albion-profile`
+- `PUT /api/v1/me/albion-profile/link`
+- `DELETE /api/v1/me/albion-profile/unlink`
+- `POST /api/v1/me/albion-profile/refresh`
