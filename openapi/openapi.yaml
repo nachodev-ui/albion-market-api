@@ -237,26 +237,26 @@ paths:
       summary: Comprobar la autorización administrativa del usuario autenticado
       responses:
         '200':
-description: Sesión administrativa activa.
-content:
-  application/json:
-    schema:
-      type: object
-      additionalProperties: true
+          description: Sesión administrativa activa.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         '401':
-description: Access token ausente o inválido.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Access token ausente o inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
-description: Cuenta autenticada sin autorización administrativa.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Cuenta autenticada sin autorización administrativa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '405':
-$ref: '#/components/responses/MethodNotAllowedGet'
+          $ref: '#/components/responses/MethodNotAllowedGet'
 
   /api/v1/admin/users:
     get:
@@ -267,45 +267,45 @@ $ref: '#/components/responses/MethodNotAllowedGet'
       summary: Buscar usuarios para administración
       parameters:
         - name: q
-in: query
-schema:
-  type: string
-  maxLength: 200
+          in: query
+          schema:
+            type: string
+            maxLength: 200
         - name: limit
-in: query
-schema:
-  type: integer
-  minimum: 1
-  maximum: 100
-  default: 50
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
       responses:
         '200':
-description: Usuarios coincidentes y su acceso efectivo.
-content:
-  application/json:
-    schema:
-      type: object
-      required: [users]
-      properties:
-        users:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
+          description: Usuarios coincidentes y su acceso efectivo.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
         '401':
-description: Access token ausente o inválido.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Access token ausente o inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
-description: Cuenta sin autorización administrativa.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Cuenta sin autorización administrativa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '405':
-$ref: '#/components/responses/MethodNotAllowedGet'
+          $ref: '#/components/responses/MethodNotAllowedGet'
 
   /api/v1/admin/users/{userId}:
     get:
@@ -316,39 +316,39 @@ $ref: '#/components/responses/MethodNotAllowedGet'
       summary: Consultar el detalle administrativo de un usuario
       parameters:
         - name: userId
-in: path
-required: true
-schema:
-  type: string
-  format: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
-description: Usuario, suscripciones y entitlements efectivos.
-content:
-  application/json:
-    schema:
-      type: object
-      additionalProperties: true
+          description: Usuario, suscripciones y entitlements efectivos.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         '401':
-description: Access token ausente o inválido.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Access token ausente o inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
-description: Cuenta sin autorización administrativa.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Cuenta sin autorización administrativa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-description: Usuario no encontrado.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Usuario no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '405':
-$ref: '#/components/responses/MethodNotAllowedGet'
+          $ref: '#/components/responses/MethodNotAllowedGet'
 
   /api/v1/admin/users/{userId}/grant-pro:
     post:
@@ -359,61 +359,61 @@ $ref: '#/components/responses/MethodNotAllowedGet'
       summary: Conceder acceso Pro manual y auditado
       parameters:
         - name: userId
-in: path
-required: true
-schema:
-  type: string
-  format: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
-application/json:
-  schema:
-    type: object
-    additionalProperties: false
-    required: [durationDays, reason, confirmation]
-    properties:
-      durationDays:
-        type: integer
-        minimum: 1
-        maximum: 365
-      reason:
-        type: string
-        minLength: 3
-        maxLength: 500
-      confirmation:
-        type: string
-        const: GRANT PRO
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [durationDays, reason, confirmation]
+              properties:
+                durationDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+                confirmation:
+                  type: string
+                  const: GRANT PRO
       responses:
         '200':
-description: Resultado idempotente del grant.
-content:
-  application/json:
-    schema:
-      type: object
-      additionalProperties: true
+          description: Resultado idempotente del grant.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         '400':
-$ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
-description: Access token ausente o inválido.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Access token ausente o inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
-description: Cuenta sin autorización administrativa.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Cuenta sin autorización administrativa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-description: Usuario no encontrado.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Usuario no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '405':
-$ref: '#/components/responses/MethodNotAllowedPost'
+          $ref: '#/components/responses/MethodNotAllowedPost'
 
   /api/v1/admin/users/{userId}/revoke-pro:
     post:
@@ -424,57 +424,57 @@ $ref: '#/components/responses/MethodNotAllowedPost'
       summary: Retirar el grant Pro manual y registrar auditoría
       parameters:
         - name: userId
-in: path
-required: true
-schema:
-  type: string
-  format: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
-application/json:
-  schema:
-    type: object
-    additionalProperties: false
-    required: [reason, confirmation]
-    properties:
-      reason:
-        type: string
-        minLength: 3
-        maxLength: 500
-      confirmation:
-        type: string
-        const: REVOKE PRO
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason, confirmation]
+              properties:
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+                confirmation:
+                  type: string
+                  const: REVOKE PRO
       responses:
         '200':
-description: Resultado idempotente de la revocación.
-content:
-  application/json:
-    schema:
-      type: object
-      additionalProperties: true
+          description: Resultado idempotente de la revocación.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         '400':
-$ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
-description: Access token ausente o inválido.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Access token ausente o inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
-description: Cuenta sin autorización administrativa.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Cuenta sin autorización administrativa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-description: Usuario no encontrado.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Usuario no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '405':
-$ref: '#/components/responses/MethodNotAllowedPost'
+          $ref: '#/components/responses/MethodNotAllowedPost'
 
   /api/v1/admin/audit-events:
     get:
@@ -485,40 +485,40 @@ $ref: '#/components/responses/MethodNotAllowedPost'
       summary: Consultar el historial administrativo append-only
       parameters:
         - name: limit
-in: query
-schema:
-  type: integer
-  minimum: 1
-  maximum: 500
-  default: 100
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
       responses:
         '200':
-description: Eventos administrativos más recientes.
-content:
-  application/json:
-    schema:
-      type: object
-      required: [events]
-      properties:
-        events:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
+          description: Eventos administrativos más recientes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
         '401':
-description: Access token ausente o inválido.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Access token ausente o inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
-description: Cuenta sin autorización administrativa.
-content:
-  application/json:
-    schema:
-      $ref: '#/components/schemas/ErrorResponse'
+          description: Cuenta sin autorización administrativa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '405':
-$ref: '#/components/responses/MethodNotAllowedGet'
+          $ref: '#/components/responses/MethodNotAllowedGet'
 
   /api/v1/billing/checkout:
     post:
