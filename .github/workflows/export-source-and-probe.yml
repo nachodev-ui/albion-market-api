@@ -25,10 +25,18 @@ jobs:
             'europe': 'https://gameinfo-ams.albiononline.com/api/gameinfo',
             'asia': 'https://gameinfo-sgp.albiononline.com/api/gameinfo',
           }
+          headers = {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (compatible; AlbionProductionCalculator/1.0; +https://albion-production-calculator.pages.dev)',
+            'Referer': 'https://albiononline.com/',
+          }
+          def fetch(url):
+              request = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.load(response)
           for server, base in servers.items():
               try:
-                  with urllib.request.urlopen(base + '/search?q=' + urllib.parse.quote('Equart'), timeout=20) as response:
-                      data = json.load(response)
+                  data = fetch(base + '/search?q=' + urllib.parse.quote('Equart'))
                   with open(f'artifacts/probe/{server}-search.json', 'w', encoding='utf-8') as handle:
                       json.dump(data, handle, ensure_ascii=False, indent=2)
                   players = data.get('players') or data.get('Players') or []
@@ -40,8 +48,7 @@ jobs:
                           (f'/players/{player_id}/deaths?limit=5&offset=0', 'deaths'),
                       ]:
                           try:
-                              with urllib.request.urlopen(base + suffix, timeout=20) as response:
-                                  payload = json.load(response)
+                              payload = fetch(base + suffix)
                               with open(f'artifacts/probe/{server}-{filename}.json', 'w', encoding='utf-8') as handle:
                                   json.dump(payload, handle, ensure_ascii=False, indent=2)
                           except Exception as exc:
