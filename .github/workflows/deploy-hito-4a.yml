@@ -1,0 +1,22 @@
+name: Deploy Hito 4A
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/deploy-hito-4a.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch official Render deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch production workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-production.yml --ref main -f confirm=DEPLOY
