@@ -38,6 +38,19 @@ type Player struct {
 	FameRatio    float64
 }
 
+type Equipment struct {
+	MainHand *string `json:"mainHand,omitempty"`
+	OffHand  *string `json:"offHand,omitempty"`
+	Head     *string `json:"head,omitempty"`
+	Armor    *string `json:"armor,omitempty"`
+	Shoes    *string `json:"shoes,omitempty"`
+	Bag      *string `json:"bag,omitempty"`
+	Cape     *string `json:"cape,omitempty"`
+	Mount    *string `json:"mount,omitempty"`
+	Potion   *string `json:"potion,omitempty"`
+	Food     *string `json:"food,omitempty"`
+}
+
 type Event struct {
 	EventID           int64     `json:"eventId"`
 	OccurredAt        time.Time `json:"occurredAt"`
@@ -49,6 +62,8 @@ type Event struct {
 	PlayerItemPower   float64   `json:"playerItemPower"`
 	OpponentItemPower float64   `json:"opponentItemPower"`
 	WeaponType        *string   `json:"weaponType,omitempty"`
+	PlayerEquipment   Equipment `json:"playerEquipment"`
+	OpponentEquipment Equipment `json:"opponentEquipment"`
 	ParticipantCount  int       `json:"participantCount"`
 	GroupMemberCount  int       `json:"groupMemberCount"`
 }
