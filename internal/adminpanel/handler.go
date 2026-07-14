@@ -28,9 +28,7 @@ type Handler struct {
 	service serviceAPI
 }
 
-func NewHandler(service serviceAPI) *Handler {
-	return &Handler{service: service}
-}
+func NewHandler(service serviceAPI) *Handler { return &Handler{service: service} }
 
 func (h *Handler) Session(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -71,39 +69,72 @@ func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
-func (h *Handler) User(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UserDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
 	identity, ok := requestIdentity(w, r)
 	if !ok {
 		return
 	}
-	tail := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/admin/users/"), "/")
-	parts := strings.Split(tail, "/")
-	if tail == "" || len(parts) > 2 {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+	detail, err := h.service.UserDetail(r.Context(), identity, r.PathValue("userId"))
+	if err != nil {
+		h.writeServiceError(w, err)
 		return
 	}
-	userID := parts[0]
-	if len(parts) == 1 {
-		if r.Method != http.MethodGet {
-			methodNotAllowed(w, http.MethodGet)
-			return
-		}
-		detail, err := h.service.UserDetail(r.Context(), identity, userID)
-		if err != nil {
-			h.writeServiceError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, detail)
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *Handler) GrantPro(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	switch parts[1] {
-	case "grant-pro":
-		h.grantPro(w, r, identity, userID)
-	case "revoke-pro":
-		h.revokePro(w, r, identity, userID)
-	default:
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+	identity, ok := requestIdentity(w, r)
+	if !ok {
+		return
 	}
+	var request struct {
+		DurationDays int    `json:"durationDays"`
+		Reason       string `json:"reason"`
+		Confirmation string `json:"confirmation"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	result, err := h.service.GrantPro(r.Context(), identity, r.PathValue("userId"), request.DurationDays, request.Reason, request.Confirmation)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) RevokePro(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	identity, ok := requestIdentity(w, r)
+	if !ok {
+		return
+	}
+	var request struct {
+		Reason       string `json:"reason"`
+		Confirmation string `json:"confirmation"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	result, err := h.service.RevokePro(r.Context(), identity, r.PathValue("userId"), request.Reason, request.Confirmation)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) AuditEvents(w http.ResponseWriter, r *http.Request) {
@@ -126,49 +157,6 @@ func (h *Handler) AuditEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
-}
-
-func (h *Handler) grantPro(w http.ResponseWriter, r *http.Request, identity authn.Identity, userID string) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-	var request struct {
-		DurationDays int    `json:"durationDays"`
-		Reason       string `json:"reason"`
-		Confirmation string `json:"confirmation"`
-	}
-	if err := decodeJSON(r, &request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	result, err := h.service.GrantPro(r.Context(), identity, userID, request.DurationDays, request.Reason, request.Confirmation)
-	if err != nil {
-		h.writeServiceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (h *Handler) revokePro(w http.ResponseWriter, r *http.Request, identity authn.Identity, userID string) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-	var request struct {
-		Reason       string `json:"reason"`
-		Confirmation string `json:"confirmation"`
-	}
-	if err := decodeJSON(r, &request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	result, err := h.service.RevokePro(r.Context(), identity, userID, request.Reason, request.Confirmation)
-	if err != nil {
-		h.writeServiceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) writeServiceError(w http.ResponseWriter, err error) {
