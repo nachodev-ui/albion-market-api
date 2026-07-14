@@ -13,8 +13,11 @@ func TestAccountAdminMigrationIsAuditedAndAppendOnly(t *testing.T) {
 		"check (action in ('grant_pro', 'revoke_pro'))",
 		"before_state jsonb not null",
 		"after_state jsonb not null",
-		"create or replace function reject_account_admin_audit_mutation()",
-		"before update or delete on account_admin_audit_events",
+		"create or replace rule account_admin_audit_no_update",
+		"on update to account_admin_audit_events",
+		"create or replace rule account_admin_audit_no_delete",
+		"on delete to account_admin_audit_events",
+		"do instead nothing",
 		"set version = greatest(version, 11)",
 	} {
 		requireContains(t, migration, expected)
