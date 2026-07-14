@@ -1,0 +1,36 @@
+name: Diagnose player profile
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'feat/albion-player-profile'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run complete race tests
+        shell: bash
+        run: |
+          set +e
+          go test -race ./... > player-profile-test.log 2>&1
+          status=$?
+          cat player-profile-test.log
+          echo "$status" > player-profile-test.status
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: player-profile-diagnostics
+          path: |
+            player-profile-test.log
+            player-profile-test.status
+          if-no-files-found: error
+          retention-days: 2
