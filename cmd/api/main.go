@@ -18,6 +18,7 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
 	"github.com/nachodev-ui/albion-market-api/internal/observability"
+	"github.com/nachodev-ui/albion-market-api/internal/playerprofile"
 	"github.com/nachodev-ui/albion-market-api/internal/repository"
 	"github.com/nachodev-ui/albion-market-api/internal/server"
 	"github.com/nachodev-ui/albion-market-api/internal/service"
@@ -81,6 +82,22 @@ func main() {
 	svc := service.NewMarketService(repo)
 	accountService := accounts.NewService(dbpool)
 	accountHandler := accounts.NewHandler(accountService)
+	profileRepository, err := playerprofile.NewPostgresRepository(dbpool)
+	if err != nil {
+		logger.Error("player_profile.repository_configure_failed", observability.F("error", err))
+		return
+	}
+	profileProvider, err := playerprofile.NewGameInfoProvider(12 * time.Second)
+	if err != nil {
+		logger.Error("player_profile.provider_configure_failed", observability.F("error", err))
+		return
+	}
+	profileService, err := playerprofile.NewService(profileRepository, profileProvider, accountService, 5*time.Minute, 50)
+	if err != nil {
+		logger.Error("player_profile.service_configure_failed", observability.F("error", err))
+		return
+	}
+	profileHandler := playerprofile.NewHandler(profileService)
 	accountAuthenticator, err := authn.New(authCfg)
 	if err != nil {
 		logger.Error("auth.configure_failed", observability.F("error", err))
@@ -205,9 +222,10 @@ func main() {
 			Logger:      logger,
 		},
 		server.AccountRoutes{
-			Handler:        accountHandler,
-			BillingHandler: billingHandler,
-			Authenticator:  accountAuthenticator,
+			Handler:              accountHandler,
+			BillingHandler:       billingHandler,
+			PlayerProfileHandler: profileHandler,
+			Authenticator:        accountAuthenticator,
 		},
 	)
 
