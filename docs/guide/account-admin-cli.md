@@ -113,4 +113,4 @@ Cada cambio real inserta una fila en `account_admin_audit_events` con:
 - estado efectivo anterior y posterior;
 - fecha UTC.
 
-La tabla rechaza `UPDATE` y `DELETE` mediante trigger. Las vistas operativas deben consultar el historial, nunca reescribirlo.
+Las reglas de la tabla convierten `UPDATE` y `DELETE` en no-ops. Las vistas operativas deben consultar el historial, nunca reescribirlo.
