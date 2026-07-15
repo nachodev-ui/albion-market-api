@@ -88,16 +88,25 @@ func NewRouter(
 			mux.HandleFunc("/api/v1/webhooks/lemonsqueezy", billingHandler.Webhook)
 		}
 		if routes.BlackMarketHandler != nil && routes.Service != nil && routes.Authenticator != nil {
-			protected := routes.Authenticator.RequireScope(
-				"read:account",
-				accounts.RequireEntitlement(
-					routes.Service,
-					blackmarket.EntitlementKey,
-					accounts.BoolEnabled,
-					http.HandlerFunc(routes.BlackMarketHandler.Analyze),
-				),
+			protectBlackMarket := func(handler http.Handler) http.Handler {
+				return routes.Authenticator.RequireScope(
+					"read:account",
+					accounts.RequireEntitlement(
+						routes.Service,
+						blackmarket.EntitlementKey,
+						accounts.BoolEnabled,
+						handler,
+					),
+				)
+			}
+			mux.Handle(
+				"/api/v1/black-market/analysis",
+				protectBlackMarket(http.HandlerFunc(routes.BlackMarketHandler.Analyze)),
 			)
-			mux.Handle("/api/v1/black-market/analysis", protected)
+			mux.Handle(
+				"/api/v1/black-market/opportunities",
+				protectBlackMarket(http.HandlerFunc(routes.BlackMarketHandler.Opportunities)),
+			)
 		}
 	}
 
