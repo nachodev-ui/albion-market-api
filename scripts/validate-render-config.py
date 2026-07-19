@@ -10,7 +10,8 @@ from pathlib import Path
 RENDER_CONFIG = Path("render.yaml")
 DEPLOY_WORKFLOW = Path(".github/workflows/deploy-production.yml")
 EXPECTED_API = "https://albion-market-api.onrender.com"
-EXPECTED_FRONTEND = "https://albion-production-calculator.pages.dev"
+EXPECTED_FRONTEND = "https://albioncalculator.app"
+LEGACY_FRONTEND = "https://albion-production-calculator.pages.dev"
 
 RETIRED_PATHS = (
     Path("fly.toml"),
@@ -43,6 +44,11 @@ def main() -> int:
             ("dockerCommand: /usr/local/bin/albion-market-api", "runtime command"),
             ("healthCheckPath: /readyz", "readiness health check"),
             (f"value: {EXPECTED_FRONTEND}", "canonical CORS origin"),
+            (LEGACY_FRONTEND, "legacy Pages compatibility origin"),
+            (
+                f"value: {EXPECTED_FRONTEND}/account?checkout=success",
+                "canonical billing redirect",
+            ),
             ("key: DATABASE_URL\n        sync: false", "Render database secret"),
             ("key: INGEST_BEARER_TOKEN\n        sync: false", "Render ingest secret"),
         ):
@@ -67,6 +73,12 @@ def main() -> int:
             ("/api/v1/history", "public history probe"),
         ):
             require_fragment(workflow, fragment, label)
+
+        require(
+            "FRONTEND_ORIGIN: https://albion-production-calculator.pages.dev"
+            not in workflow,
+            "deployment workflow still treats pages.dev as canonical frontend",
+        )
 
         forbidden_workflow_terms = ("FLY_API_TOKEN", "flyctl", ".fly.dev")
         for term in forbidden_workflow_terms:
