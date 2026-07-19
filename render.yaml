@@ -22,7 +22,7 @@ services:
       - key: LOG_FORMAT
         value: json
       - key: CORS_ALLOWED_ORIGINS
-        value: https://albion-production-calculator.pages.dev
+        value: https://albioncalculator.app,https://www.albioncalculator.app,https://albion-production-calculator.pages.dev
       - key: AUTH_ENABLED
         value: "true"
       - key: AUTH_EMERGENCY_DISABLED
@@ -44,7 +44,7 @@ services:
       - key: BILLING_TEST_MODE
         value: "true"
       - key: BILLING_CHECKOUT_REDIRECT_URL
-        value: https://albion-production-calculator.pages.dev/account?checkout=success
+        value: https://albioncalculator.app/account?checkout=success
       - key: BILLING_GRACE_PERIOD
         value: 168h
       - key: BILLING_HTTP_TIMEOUT
