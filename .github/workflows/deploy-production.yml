@@ -24,7 +24,7 @@ jobs:
     environment: production
     env:
       API_URL: https://albion-market-api.onrender.com
-      FRONTEND_ORIGIN: https://albion-production-calculator.pages.dev
+      FRONTEND_ORIGIN: https://albioncalculator.app
       MIGRATION_IMAGE: albion-market-api:production-migration-${{ github.sha }}
       EXPECTED_AUTH_ENABLED: 'true'
       EXPECTED_AUTH_ISSUER: https://albion-production-calculator.us.auth0.com/
@@ -246,7 +246,7 @@ jobs:
             echo "- Neon migrations: completed before deploy"
             echo "- Render health/readiness: verified"
             echo "- Account authentication mode: ${EXPECTED_AUTH_ENABLED}"
-            echo "- Cloudflare CORS and frontend: verified"
+            echo "- Canonical frontend CORS and availability: verified"
             echo "- Public prices/history: verified"
             echo "- Ingest authentication probe: rejected without writes"
           } >> "${GITHUB_STEP_SUMMARY}"
