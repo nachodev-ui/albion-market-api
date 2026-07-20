@@ -8,6 +8,7 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/blackmarket"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 	"github.com/nachodev-ui/albion-market-api/internal/playerprofile"
+	"github.com/nachodev-ui/albion-market-api/internal/saveddata"
 )
 
 type AccountAuthenticator interface {
@@ -21,6 +22,7 @@ type AccountRoutes struct {
 	BillingHandler       *billing.Handler
 	PlayerProfileHandler *playerprofile.Handler
 	BlackMarketHandler   *blackmarket.Handler
+	SavedDataHandler     *saveddata.Handler
 	Authenticator        AccountAuthenticator
 }
 
@@ -80,6 +82,27 @@ func NewRouter(
 			mux.HandleFunc("/api/v1/me/albion-profile/link", profileHandler.Link)
 			mux.HandleFunc("/api/v1/me/albion-profile/unlink", profileHandler.Unlink)
 			mux.HandleFunc("/api/v1/me/albion-profile/refresh", profileHandler.Refresh)
+		}
+		if routes.SavedDataHandler != nil && routes.Authenticator != nil {
+			protectSavedData := func(handler http.Handler) http.Handler {
+				return routes.Authenticator.RequireScope("read:account", handler)
+			}
+			mux.Handle(
+				"/api/v1/me/presets",
+				protectSavedData(http.HandlerFunc(routes.SavedDataHandler.Presets)),
+			)
+			mux.Handle(
+				"/api/v1/me/presets/{presetId}",
+				protectSavedData(http.HandlerFunc(routes.SavedDataHandler.Preset)),
+			)
+			mux.Handle(
+				"/api/v1/me/calculations",
+				protectSavedData(http.HandlerFunc(routes.SavedDataHandler.Calculations)),
+			)
+			mux.Handle(
+				"/api/v1/me/calculations/{calculationId}",
+				protectSavedData(http.HandlerFunc(routes.SavedDataHandler.Calculation)),
+			)
 		}
 		if routes.BillingHandler != nil {
 			billingHandler := handlers.NewAuthenticatedBillingHandler(routes.BillingHandler, routes.Authenticator)
