@@ -22,6 +22,7 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/observability"
 	"github.com/nachodev-ui/albion-market-api/internal/playerprofile"
 	"github.com/nachodev-ui/albion-market-api/internal/repository"
+	"github.com/nachodev-ui/albion-market-api/internal/saveddata"
 	"github.com/nachodev-ui/albion-market-api/internal/server"
 	"github.com/nachodev-ui/albion-market-api/internal/service"
 )
@@ -84,6 +85,8 @@ func main() {
 	svc := service.NewMarketService(repo)
 	accountService := accounts.NewService(dbpool)
 	accountHandler := accounts.NewHandler(accountService)
+	savedDataService := saveddata.NewService(dbpool, accountService)
+	savedDataHandler := saveddata.NewHandler(savedDataService, cfg.MaxPublicBodyBytes)
 	blackMarketService := blackmarket.NewService(dbpool, marketcatalog.NewDefault())
 	blackMarketHandler := blackmarket.NewHandler(blackMarketService, cfg.MaxPublicBodyBytes)
 	profileRepository, err := playerprofile.NewPostgresRepository(dbpool)
@@ -231,6 +234,7 @@ func main() {
 			BillingHandler:       billingHandler,
 			PlayerProfileHandler: profileHandler,
 			BlackMarketHandler:   blackMarketHandler,
+			SavedDataHandler:     savedDataHandler,
 			Authenticator:        accountAuthenticator,
 		},
 	)
@@ -263,6 +267,8 @@ func main() {
 			observability.F("black_market_analysis", "/api/v1/black-market/analysis"),
 			observability.F("account_me", "/api/v1/me"),
 			observability.F("account_entitlements", "/api/v1/me/entitlements"),
+			observability.F("saved_presets", "/api/v1/me/presets"),
+			observability.F("saved_calculations", "/api/v1/me/calculations"),
 			observability.F("auth_enabled", authCfg.Enabled),
 			observability.F("billing_enabled", billingCfg.Enabled),
 			observability.F("billing_provider", billingCfg.Provider),
