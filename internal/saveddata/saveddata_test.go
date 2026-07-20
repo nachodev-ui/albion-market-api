@@ -18,9 +18,9 @@ func TestValidatePresetInput(t *testing.T) {
 	}
 
 	for name, input := range map[string]PresetInput{
-		"empty name": {Name: " ", Payload: valid.Payload},
+		"empty name":    {Name: " ", Payload: valid.Payload},
 		"array payload": {Name: valid.Name, Payload: json.RawMessage(`[]`)},
-		"invalid json": {Name: valid.Name, Payload: json.RawMessage(`{"cityId"`)},
+		"invalid json":  {Name: valid.Name, Payload: json.RawMessage(`{"cityId"`)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
