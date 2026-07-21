@@ -25,6 +25,10 @@ const (
 	maxPriceQueryEntries = 2000
 )
 
+type currentPriceTrustRepository interface {
+	QueryCurrentPricesWithTrust(context.Context, domain.CurrentPriceLookup) ([]domain.CurrentPrice, error)
+}
+
 type MarketService struct {
 	repo    repository.MarketRepository
 	catalog *marketcatalog.Catalog
@@ -103,7 +107,12 @@ func (s *MarketService) QueryCurrentPrices(ctx context.Context, req domain.Price
 		return domain.PriceQueryResponse{}, err
 	}
 
-	prices, err := s.repo.QueryCurrentPrices(ctx, normalized.lookup)
+	var prices []domain.CurrentPrice
+	if trustRepo, ok := s.repo.(currentPriceTrustRepository); ok {
+		prices, err = trustRepo.QueryCurrentPricesWithTrust(ctx, normalized.lookup)
+	} else {
+		prices, err = s.repo.QueryCurrentPrices(ctx, normalized.lookup)
+	}
 	if err != nil {
 		return domain.PriceQueryResponse{}, err
 	}

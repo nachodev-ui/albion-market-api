@@ -13,17 +13,25 @@ import (
 )
 
 type fakeDatabaseMonitor struct {
-	snapshot observability.DatabaseSnapshot
+	snapshot  observability.DatabaseSnapshot
+	dataTrust observability.DataTrustSnapshot
 }
 
 func (f fakeDatabaseMonitor) Snapshot(context.Context) observability.DatabaseSnapshot {
 	return f.snapshot
 }
 
-func TestStatusHandlerReportsDatabaseAndIngestMetrics(t *testing.T) {
+func (f fakeDatabaseMonitor) DataTrustSnapshot(context.Context, time.Time) observability.DataTrustSnapshot {
+	return f.dataTrust
+}
+
+func TestStatusHandlerReportsDatabaseIngestAndDataTrustMetrics(t *testing.T) {
 	t.Parallel()
 
 	startedAt := time.Now().UTC().Add(-time.Minute)
+	lastPrice := startedAt.Add(30 * time.Second)
+	lastHistory := startedAt.Add(20 * time.Second)
+	lastMarket := startedAt.Add(40 * time.Second)
 	metrics := observability.NewIngestMetrics()
 	historyMetrics := observability.NewHistoryIngestMetrics()
 	metrics.RequestStarted(startedAt.Add(10 * time.Second))
@@ -48,17 +56,31 @@ func TestStatusHandlerReportsDatabaseAndIngestMetrics(t *testing.T) {
 		"albion-market-api",
 		"test",
 		startedAt,
-		fakeDatabaseMonitor{snapshot: observability.DatabaseSnapshot{
-			Healthy:     true,
-			PingLatency: 1250 * time.Microsecond,
-			Pool: observability.DatabasePoolStats{
-				MaxConnections:      10,
-				TotalConnections:    4,
-				AcquiredConnections: 1,
-				IdleConnections:     3,
-				AcquireCount:        12,
+		fakeDatabaseMonitor{
+			snapshot: observability.DatabaseSnapshot{
+				Healthy:     true,
+				PingLatency: 1250 * time.Microsecond,
+				Pool: observability.DatabasePoolStats{
+					MaxConnections:      10,
+					TotalConnections:    4,
+					AcquiredConnections: 1,
+					IdleConnections:     3,
+					AcquireCount:        12,
+				},
 			},
-		}},
+			dataTrust: observability.DataTrustSnapshot{
+				LastPriceReceptionAt:   &lastPrice,
+				LastHistoryReceptionAt: &lastHistory,
+				TotalObjects:           100,
+				RecentObjects:          75,
+				Servers: []observability.DataCoverage{{
+					Key: "west", Name: "Americas", TotalObjects: 80, RecentObjects: 64, LastUpdatedAt: &lastMarket,
+				}},
+				Markets: []observability.DataCoverage{{
+					Key: "martlock", Name: "Martlock", TotalObjects: 50, RecentObjects: 25, LastUpdatedAt: &lastMarket,
+				}},
+			},
+		},
 		metrics,
 		historyMetrics,
 	)
@@ -91,6 +113,12 @@ func TestStatusHandlerReportsDatabaseAndIngestMetrics(t *testing.T) {
 		body.HistoryIngest.AcceptedBucketsTotal != 68 || body.HistoryIngest.HistoryRowsTouchedTotal != 60 {
 		t.Fatalf("history ingest = %#v", body.HistoryIngest)
 	}
+	if body.DataTrust.Status != "ok" || body.DataTrust.RecentObjectsPercent != 75 {
+		t.Fatalf("data trust = %#v, want status ok and 75 percent", body.DataTrust)
+	}
+	if len(body.DataTrust.Markets) != 1 || body.DataTrust.Markets[0].RecentObjectsPercent != 50 {
+		t.Fatalf("market coverage = %#v", body.DataTrust.Markets)
+	}
 }
 
 func TestStatusHandlerReturnsServiceUnavailableWhenDatabaseIsDown(t *testing.T) {
@@ -121,6 +149,9 @@ func TestStatusHandlerReturnsServiceUnavailableWhenDatabaseIsDown(t *testing.T) 
 	}
 	if body.Status != "degraded" || body.Database.Status != "unavailable" {
 		t.Fatalf("status = %q database = %q, want degraded/unavailable", body.Status, body.Database.Status)
+	}
+	if body.DataTrust.Status != "unavailable" {
+		t.Fatalf("data trust status = %q, want unavailable", body.DataTrust.Status)
 	}
 }
 
