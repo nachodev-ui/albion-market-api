@@ -1,0 +1,41 @@
+name: Format data trust branch
+
+on:
+  push:
+    branches:
+      - feat/data-trust-center
+
+permissions:
+  contents: write
+
+concurrency:
+  group: format-data-trust-branch
+  cancel-in-progress: false
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/data-trust-center
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Apply gofmt
+        run: gofmt -w internal/domain/market.go internal/service/market_service.go internal/handlers/status_handler.go internal/handlers/status_handler_test.go internal/observability/data_trust.go internal/repository/market_trust_repository.go
+      - name: Commit formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No formatting changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add internal/domain/market.go internal/service/market_service.go internal/handlers/status_handler.go internal/handlers/status_handler_test.go internal/observability/data_trust.go internal/repository/market_trust_repository.go
+          git commit -m 'style: apply gofmt to data trust changes'
+          git push origin HEAD:feat/data-trust-center
