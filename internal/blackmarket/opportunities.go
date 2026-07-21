@@ -94,33 +94,40 @@ func (s *Service) Opportunities(ctx context.Context, request OpportunitiesReques
 			orderDifference = &value
 		}
 		data = append(data, Opportunity{
-			ID:                         opportunityID(row.itemIdentifier, marketKey, row.purchaseQuality, row.blackMarketQuality),
-			ItemIdentifier:             row.itemIdentifier,
-			Tier:                       tier,
-			Enchantment:                enchantment,
-			Category:                   category,
-			PurchaseMarketKey:          marketKey,
-			PurchaseQuality:            row.purchaseQuality,
-			PurchaseUnitPrice:          row.purchaseUnitPrice,
-			PurchasePriceDate:          row.purchasePriceDate,
-			PurchaseAgeMinutes:         purchaseAge,
-			BlackMarketQuality:         row.blackMarketQuality,
-			BlackMarketBuyUnitPrice:    row.blackMarketBuyUnitPrice,
-			BlackMarketBuyPriceDate:    row.blackMarketBuyPriceDate,
-			BlackMarketAgeMinutes:      blackMarketAge,
-			BlackMarketSellUnitPrice:   row.blackMarketSellUnitPrice,
-			BlackMarketSellPriceDate:   row.blackMarketSellPriceDate,
-			BlackMarketOrderDifference: orderDifference,
-			EstimatedSalesTax:          row.estimatedSalesTax,
-			TransportCostPerUnit:       normalized.transportCostPerUnit,
-			NetUnitRevenue:             row.netUnitRevenue,
-			Profit:                     row.profit,
-			MarginPercent:              row.marginPercent,
-			ReturnOnCostPercent:        row.returnOnCostPercent,
-			BreakEvenUnitPrice:         row.breakEvenUnitPrice,
-			CaerleonCompetition:        competition,
-			Risk:                       risk,
-			RiskReasons:                reasons,
+			ID:                               opportunityID(row.itemIdentifier, marketKey, row.purchaseQuality, row.blackMarketQuality),
+			ItemIdentifier:                   row.itemIdentifier,
+			Tier:                             tier,
+			Enchantment:                      enchantment,
+			Category:                         category,
+			PurchaseMarketKey:                marketKey,
+			PurchaseQuality:                  row.purchaseQuality,
+			PurchaseUnitPrice:                row.purchaseUnitPrice,
+			PurchasePriceDate:                row.purchasePriceDate,
+			PurchaseAgeMinutes:               purchaseAge,
+			PurchaseBuyUnitPrice:             row.purchaseBuyUnitPrice,
+			PurchaseHistoryObservations7D:    row.purchaseHistoryObservations7D,
+			PurchaseHistoryVolume7D:          row.purchaseHistoryVolume7D,
+			PurchaseMedianPrice7D:            row.purchaseMedianPrice7D,
+			BlackMarketQuality:               row.blackMarketQuality,
+			BlackMarketBuyUnitPrice:          row.blackMarketBuyUnitPrice,
+			BlackMarketBuyPriceDate:          row.blackMarketBuyPriceDate,
+			BlackMarketAgeMinutes:            blackMarketAge,
+			BlackMarketHistoryObservations7D: row.blackMarketHistoryObservations7D,
+			BlackMarketHistoryVolume7D:       row.blackMarketHistoryVolume7D,
+			BlackMarketMedianPrice7D:         row.blackMarketMedianPrice7D,
+			BlackMarketSellUnitPrice:         row.blackMarketSellUnitPrice,
+			BlackMarketSellPriceDate:         row.blackMarketSellPriceDate,
+			BlackMarketOrderDifference:       orderDifference,
+			EstimatedSalesTax:                row.estimatedSalesTax,
+			TransportCostPerUnit:             normalized.transportCostPerUnit,
+			NetUnitRevenue:                   row.netUnitRevenue,
+			Profit:                           row.profit,
+			MarginPercent:                    row.marginPercent,
+			ReturnOnCostPercent:              row.returnOnCostPercent,
+			BreakEvenUnitPrice:               row.breakEvenUnitPrice,
+			CaerleonCompetition:              competition,
+			Risk:                             risk,
+			RiskReasons:                      reasons,
 		})
 	}
 
@@ -269,30 +276,62 @@ func (s *Service) loadOpportunities(ctx context.Context, request normalizedOppor
 	}
 
 	query := fmt.Sprintf(`
-		with black_market as (
-			select item_key, quality, buy_price_max, buy_price_max_at, sell_price_min, sell_price_min_at
-			from current_market_prices
+		with history_stats as (
+			select
+				location_id,
+				item_key,
+				quality,
+				count(*)::bigint as observations_7d,
+				coalesce(sum(item_count), 0)::bigint as volume_7d,
+				round(
+					percentile_cont(0.5) within group (order by average_unit_price)
+						filter (where average_unit_price is not null)
+				)::bigint as median_price_7d
+			from market_history_buckets
 			where server = $1
-			  and location_id = $2
-			  and buy_price_max > 0
-			  and buy_price_max_at is not null
-			  and buy_price_max_at >= $3
+			  and (location_id = $2 or location_id = any($4::smallint[]))
+			  and bucket_at >= now() - interval '7 days'
 			  and case when item_key ~ '^T[4-8]_' then substring(item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])
 			  and case when item_key ~ '@[0-4]$' then right(item_key, 1)::smallint else 0 end = any($6::smallint[])
 			  and (($8 and item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and item_key ~ '^T[4-8]_OFF_') or ($11 and item_key ~ '^T[4-8]_(CAPE|BAG)_'))
+			group by location_id, item_key, quality
+		),
+		black_market as (
+			select
+				c.item_key, c.quality, c.buy_price_max, c.buy_price_max_at, c.sell_price_min, c.sell_price_min_at,
+				coalesce(h.observations_7d, 0) as history_observations_7d,
+				coalesce(h.volume_7d, 0) as history_volume_7d,
+				h.median_price_7d as history_median_price_7d
+			from current_market_prices c
+			left join history_stats h
+			  on h.location_id = c.location_id and h.item_key = c.item_key and h.quality = c.quality
+			where c.server = $1
+			  and c.location_id = $2
+			  and c.buy_price_max > 0
+			  and c.buy_price_max_at is not null
+			  and c.buy_price_max_at >= $3
+			  and case when c.item_key ~ '^T[4-8]_' then substring(c.item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])
+			  and case when c.item_key ~ '@[0-4]$' then right(c.item_key, 1)::smallint else 0 end = any($6::smallint[])
+			  and (($8 and c.item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and c.item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and c.item_key ~ '^T[4-8]_OFF_') or ($11 and c.item_key ~ '^T[4-8]_(CAPE|BAG)_'))
 		),
 		source_market as (
-			select location_id, item_key, quality, sell_price_min, sell_price_min_at
-			from current_market_prices
-			where server = $1
-			  and location_id = any($4::smallint[])
-			  and sell_price_min > 0
-			  and sell_price_min_at is not null
-			  and sell_price_min_at >= $12
-			  and case when item_key ~ '^T[4-8]_' then substring(item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])
-			  and case when item_key ~ '@[0-4]$' then right(item_key, 1)::smallint else 0 end = any($6::smallint[])
-			  and quality = any($7::smallint[])
-			  and (($8 and item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and item_key ~ '^T[4-8]_OFF_') or ($11 and item_key ~ '^T[4-8]_(CAPE|BAG)_'))
+			select
+				c.location_id, c.item_key, c.quality, c.sell_price_min, c.sell_price_min_at, c.buy_price_max,
+				coalesce(h.observations_7d, 0) as history_observations_7d,
+				coalesce(h.volume_7d, 0) as history_volume_7d,
+				h.median_price_7d as history_median_price_7d
+			from current_market_prices c
+			left join history_stats h
+			  on h.location_id = c.location_id and h.item_key = c.item_key and h.quality = c.quality
+			where c.server = $1
+			  and c.location_id = any($4::smallint[])
+			  and c.sell_price_min > 0
+			  and c.sell_price_min_at is not null
+			  and c.sell_price_min_at >= $12
+			  and case when c.item_key ~ '^T[4-8]_' then substring(c.item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])
+			  and case when c.item_key ~ '@[0-4]$' then right(c.item_key, 1)::smallint else 0 end = any($6::smallint[])
+			  and c.quality = any($7::smallint[])
+			  and (($8 and c.item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and c.item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and c.item_key ~ '^T[4-8]_OFF_') or ($11 and c.item_key ~ '^T[4-8]_(CAPE|BAG)_'))
 		),
 		candidate as (
 			select
@@ -301,9 +340,16 @@ func (s *Service) loadOpportunities(ctx context.Context, request normalizedOppor
 				s.quality as purchase_quality,
 				s.sell_price_min as purchase_unit_price,
 				s.sell_price_min_at as purchase_price_date,
+				s.buy_price_max as purchase_buy_unit_price,
+				s.history_observations_7d as purchase_history_observations_7d,
+				s.history_volume_7d as purchase_history_volume_7d,
+				s.history_median_price_7d as purchase_median_price_7d,
 				bm.quality as black_market_quality,
 				bm.buy_price_max as black_market_buy_unit_price,
 				bm.buy_price_max_at as black_market_buy_price_date,
+				bm.history_observations_7d as black_market_history_observations_7d,
+				bm.history_volume_7d as black_market_history_volume_7d,
+				bm.history_median_price_7d as black_market_median_price_7d,
 				bm.sell_price_min as black_market_sell_unit_price,
 				bm.sell_price_min_at as black_market_sell_price_date,
 				round(bm.buy_price_max::double precision * $13::double precision)::bigint as estimated_sales_tax,
@@ -350,9 +396,16 @@ func (s *Service) loadOpportunities(ctx context.Context, request normalizedOppor
 			purchase_quality,
 			purchase_unit_price,
 			purchase_price_date,
+			purchase_buy_unit_price,
+			purchase_history_observations_7d,
+			purchase_history_volume_7d,
+			purchase_median_price_7d,
 			black_market_quality,
 			black_market_buy_unit_price,
 			black_market_buy_price_date,
+			black_market_history_observations_7d,
+			black_market_history_volume_7d,
+			black_market_median_price_7d,
 			black_market_sell_unit_price,
 			black_market_sell_price_date,
 			estimated_sales_tax,
@@ -413,9 +466,16 @@ func (s *Service) loadOpportunities(ctx context.Context, request normalizedOppor
 			&row.purchaseQuality,
 			&row.purchaseUnitPrice,
 			&row.purchasePriceDate,
+			&row.purchaseBuyUnitPrice,
+			&row.purchaseHistoryObservations7D,
+			&row.purchaseHistoryVolume7D,
+			&row.purchaseMedianPrice7D,
 			&row.blackMarketQuality,
 			&row.blackMarketBuyUnitPrice,
 			&row.blackMarketBuyPriceDate,
+			&row.blackMarketHistoryObservations7D,
+			&row.blackMarketHistoryVolume7D,
+			&row.blackMarketMedianPrice7D,
 			&row.blackMarketSellUnitPrice,
 			&row.blackMarketSellPriceDate,
 			&row.estimatedSalesTax,

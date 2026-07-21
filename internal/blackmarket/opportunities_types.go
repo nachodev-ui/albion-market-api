@@ -61,33 +61,40 @@ type OpportunityCompetition struct {
 }
 
 type Opportunity struct {
-	ID                         string                 `json:"id"`
-	ItemIdentifier             string                 `json:"itemIdentifier"`
-	Tier                       int16                  `json:"tier"`
-	Enchantment                int16                  `json:"enchantment"`
-	Category                   string                 `json:"category"`
-	PurchaseMarketKey          string                 `json:"purchaseMarketKey"`
-	PurchaseQuality            int16                  `json:"purchaseQuality"`
-	PurchaseUnitPrice          int64                  `json:"purchaseUnitPrice"`
-	PurchasePriceDate          time.Time              `json:"purchasePriceDate"`
-	PurchaseAgeMinutes         int                    `json:"purchaseAgeMinutes"`
-	BlackMarketQuality         int16                  `json:"blackMarketQuality"`
-	BlackMarketBuyUnitPrice    int64                  `json:"blackMarketBuyUnitPrice"`
-	BlackMarketBuyPriceDate    time.Time              `json:"blackMarketBuyPriceDate"`
-	BlackMarketAgeMinutes      int                    `json:"blackMarketAgeMinutes"`
-	BlackMarketSellUnitPrice   *int64                 `json:"blackMarketSellUnitPrice"`
-	BlackMarketSellPriceDate   *time.Time             `json:"blackMarketSellPriceDate"`
-	BlackMarketOrderDifference *int64                 `json:"blackMarketOrderDifference"`
-	EstimatedSalesTax          int64                  `json:"estimatedSalesTax"`
-	TransportCostPerUnit       int64                  `json:"transportCostPerUnit"`
-	NetUnitRevenue             int64                  `json:"netUnitRevenue"`
-	Profit                     int64                  `json:"profit"`
-	MarginPercent              float64                `json:"marginPercent"`
-	ReturnOnCostPercent        float64                `json:"returnOnCostPercent"`
-	BreakEvenUnitPrice         int64                  `json:"breakEvenUnitPrice"`
-	CaerleonCompetition        OpportunityCompetition `json:"caerleonCompetition"`
-	Risk                       string                 `json:"risk"`
-	RiskReasons                []string               `json:"riskReasons"`
+	ID                               string                 `json:"id"`
+	ItemIdentifier                   string                 `json:"itemIdentifier"`
+	Tier                             int16                  `json:"tier"`
+	Enchantment                      int16                  `json:"enchantment"`
+	Category                         string                 `json:"category"`
+	PurchaseMarketKey                string                 `json:"purchaseMarketKey"`
+	PurchaseQuality                  int16                  `json:"purchaseQuality"`
+	PurchaseUnitPrice                int64                  `json:"purchaseUnitPrice"`
+	PurchasePriceDate                time.Time              `json:"purchasePriceDate"`
+	PurchaseAgeMinutes               int                    `json:"purchaseAgeMinutes"`
+	PurchaseBuyUnitPrice             *int64                 `json:"purchaseBuyUnitPrice"`
+	PurchaseHistoryObservations7D    int64                  `json:"purchaseHistoryObservations7d"`
+	PurchaseHistoryVolume7D          int64                  `json:"purchaseHistoryVolume7d"`
+	PurchaseMedianPrice7D            *int64                 `json:"purchaseMedianPrice7d"`
+	BlackMarketQuality               int16                  `json:"blackMarketQuality"`
+	BlackMarketBuyUnitPrice          int64                  `json:"blackMarketBuyUnitPrice"`
+	BlackMarketBuyPriceDate          time.Time              `json:"blackMarketBuyPriceDate"`
+	BlackMarketAgeMinutes            int                    `json:"blackMarketAgeMinutes"`
+	BlackMarketHistoryObservations7D int64                  `json:"blackMarketHistoryObservations7d"`
+	BlackMarketHistoryVolume7D       int64                  `json:"blackMarketHistoryVolume7d"`
+	BlackMarketMedianPrice7D         *int64                 `json:"blackMarketMedianPrice7d"`
+	BlackMarketSellUnitPrice         *int64                 `json:"blackMarketSellUnitPrice"`
+	BlackMarketSellPriceDate         *time.Time             `json:"blackMarketSellPriceDate"`
+	BlackMarketOrderDifference       *int64                 `json:"blackMarketOrderDifference"`
+	EstimatedSalesTax                int64                  `json:"estimatedSalesTax"`
+	TransportCostPerUnit             int64                  `json:"transportCostPerUnit"`
+	NetUnitRevenue                   int64                  `json:"netUnitRevenue"`
+	Profit                           int64                  `json:"profit"`
+	MarginPercent                    float64                `json:"marginPercent"`
+	ReturnOnCostPercent              float64                `json:"returnOnCostPercent"`
+	BreakEvenUnitPrice               int64                  `json:"breakEvenUnitPrice"`
+	CaerleonCompetition              OpportunityCompetition `json:"caerleonCompetition"`
+	Risk                             string                 `json:"risk"`
+	RiskReasons                      []string               `json:"riskReasons"`
 }
 
 type OpportunityCoverage struct {
@@ -137,25 +144,32 @@ type normalizedOpportunitiesRequest struct {
 }
 
 type opportunityRow struct {
-	totalMatching             int64
-	locationID                int16
-	itemIdentifier            string
-	purchaseQuality           int16
-	purchaseUnitPrice         int64
-	purchasePriceDate         time.Time
-	blackMarketQuality        int16
-	blackMarketBuyUnitPrice   int64
-	blackMarketBuyPriceDate   time.Time
-	blackMarketSellUnitPrice  *int64
-	blackMarketSellPriceDate  *time.Time
-	estimatedSalesTax         int64
-	netUnitRevenue            int64
-	profit                    int64
-	marginPercent             float64
-	returnOnCostPercent       float64
-	breakEvenUnitPrice        int64
-	caerleonPurchaseUnitPrice *int64
-	caerleonPurchaseQuality   *int16
-	caerleonPurchasePriceDate *time.Time
-	caerleonProfit            *int64
+	totalMatching                    int64
+	locationID                       int16
+	itemIdentifier                   string
+	purchaseQuality                  int16
+	purchaseUnitPrice                int64
+	purchasePriceDate                time.Time
+	purchaseBuyUnitPrice             *int64
+	purchaseHistoryObservations7D    int64
+	purchaseHistoryVolume7D          int64
+	purchaseMedianPrice7D            *int64
+	blackMarketQuality               int16
+	blackMarketBuyUnitPrice          int64
+	blackMarketBuyPriceDate          time.Time
+	blackMarketHistoryObservations7D int64
+	blackMarketHistoryVolume7D       int64
+	blackMarketMedianPrice7D         *int64
+	blackMarketSellUnitPrice         *int64
+	blackMarketSellPriceDate         *time.Time
+	estimatedSalesTax                int64
+	netUnitRevenue                   int64
+	profit                           int64
+	marginPercent                    float64
+	returnOnCostPercent              float64
+	breakEvenUnitPrice               int64
+	caerleonPurchaseUnitPrice        *int64
+	caerleonPurchaseQuality          *int16
+	caerleonPurchasePriceDate        *time.Time
+	caerleonProfit                   *int64
 }
