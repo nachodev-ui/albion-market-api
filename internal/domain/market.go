@@ -134,16 +134,19 @@ type CurrentPriceLookup struct {
 }
 
 type CurrentPrice struct {
-	Server         Server     `json:"server"`
-	MarketKey      string     `json:"marketKey"`
-	LocationID     int16      `json:"-"`
-	ItemKey        string     `json:"itemIdentifier"`
-	Quality        int16      `json:"quality"`
-	SellPriceMin   *int64     `json:"sellPriceMin"`
-	SellPriceMinAt *time.Time `json:"sellPriceMinDate"`
-	BuyPriceMax    *int64     `json:"buyPriceMax"`
-	BuyPriceMaxAt  *time.Time `json:"buyPriceMaxDate"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	Server                Server     `json:"server"`
+	MarketKey             string     `json:"marketKey"`
+	LocationID            int16      `json:"-"`
+	ItemKey               string     `json:"itemIdentifier"`
+	Quality               int16      `json:"quality"`
+	SellPriceMin          *int64     `json:"sellPriceMin"`
+	SellPriceMinAt        *time.Time `json:"sellPriceMinDate"`
+	BuyPriceMax           *int64     `json:"buyPriceMax"`
+	BuyPriceMaxAt         *time.Time `json:"buyPriceMaxDate"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+	HistoryObservations7D int64      `json:"historyObservations7d"`
+	HistoryVolume7D       int64      `json:"historyVolume7d"`
+	MedianPrice7D         *int64     `json:"medianPrice7d"`
 }
 
 type PriceQueryResponse struct {
