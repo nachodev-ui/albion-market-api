@@ -8,7 +8,15 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/observability"
 )
 
-const databaseStatusTimeout = 2 * time.Second
+const (
+	databaseStatusTimeout = 2 * time.Second
+	dataTrustStatusTimeout = 4 * time.Second
+	dataTrustRecentWindow  = 6 * time.Hour
+)
+
+type dataTrustMonitor interface {
+	DataTrustSnapshot(context.Context, time.Time) observability.DataTrustSnapshot
+}
 
 type StatusHandler struct {
 	serviceName   string
@@ -49,11 +57,11 @@ func (h *StatusHandler) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), databaseStatusTimeout)
-	defer cancel()
+	databaseCtx, databaseCancel := context.WithTimeout(r.Context(), databaseStatusTimeout)
+	database := h.database.Snapshot(databaseCtx)
+	databaseCancel()
 
 	now := time.Now().UTC()
-	database := h.database.Snapshot(ctx)
 	ingest := h.ingest.Snapshot()
 	historyIngest := h.historyIngest.Snapshot()
 
@@ -62,6 +70,22 @@ func (h *StatusHandler) Status(w http.ResponseWriter, r *http.Request) {
 	if !database.Healthy {
 		status = "degraded"
 		httpStatus = http.StatusServiceUnavailable
+	}
+
+	dataTrust := dataTrustStatusResponse{
+		Status:              "unavailable",
+		GeneratedAt:         now,
+		RecentWindowMinutes: int64(dataTrustRecentWindow / time.Minute),
+		Servers:             []dataCoverageStatusResponse{},
+		Markets:             []dataCoverageStatusResponse{},
+	}
+	if provider, ok := h.database.(dataTrustMonitor); ok && database.Healthy {
+		trustCtx, trustCancel := context.WithTimeout(r.Context(), dataTrustStatusTimeout)
+		snapshot := provider.DataTrustSnapshot(trustCtx, now.Add(-dataTrustRecentWindow))
+		trustCancel()
+		if snapshot.Err == nil {
+			dataTrust = buildDataTrustStatus(now, snapshot)
+		}
 	}
 
 	response := statusResponse{
@@ -120,9 +144,50 @@ func (h *StatusHandler) Status(w http.ResponseWriter, r *http.Request) {
 			LastErrorAt:             historyIngest.LastErrorAt,
 			LastErrorKind:           historyIngest.LastErrorKind,
 		},
+		DataTrust: dataTrust,
 	}
 
 	writeJSON(w, httpStatus, response)
+}
+
+func buildDataTrustStatus(now time.Time, snapshot observability.DataTrustSnapshot) dataTrustStatusResponse {
+	response := dataTrustStatusResponse{
+		Status:                   "ok",
+		GeneratedAt:              now,
+		RecentWindowMinutes:      int64(dataTrustRecentWindow / time.Minute),
+		LastPriceReceptionAt:     snapshot.LastPriceReceptionAt,
+		LastHistoryReceptionAt:   snapshot.LastHistoryReceptionAt,
+		TotalObjects:             snapshot.TotalObjects,
+		RecentObjects:            snapshot.RecentObjects,
+		RecentObjectsPercent:     coveragePercent(snapshot.RecentObjects, snapshot.TotalObjects),
+		Servers:                  make([]dataCoverageStatusResponse, 0, len(snapshot.Servers)),
+		Markets:                  make([]dataCoverageStatusResponse, 0, len(snapshot.Markets)),
+	}
+	for _, coverage := range snapshot.Servers {
+		response.Servers = append(response.Servers, buildCoverageStatus(coverage))
+	}
+	for _, coverage := range snapshot.Markets {
+		response.Markets = append(response.Markets, buildCoverageStatus(coverage))
+	}
+	return response
+}
+
+func buildCoverageStatus(coverage observability.DataCoverage) dataCoverageStatusResponse {
+	return dataCoverageStatusResponse{
+		Key:                  coverage.Key,
+		Name:                 coverage.Name,
+		TotalObjects:         coverage.TotalObjects,
+		RecentObjects:        coverage.RecentObjects,
+		RecentObjectsPercent: coveragePercent(coverage.RecentObjects, coverage.TotalObjects),
+		LastUpdatedAt:        coverage.LastUpdatedAt,
+	}
+}
+
+func coveragePercent(recent, total int64) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return float64(recent) * 100 / float64(total)
 }
 
 type statusResponse struct {
@@ -135,6 +200,7 @@ type statusResponse struct {
 	Database      databaseStatusResponse      `json:"database"`
 	Ingest        ingestStatusResponse        `json:"ingest"`
 	HistoryIngest historyIngestStatusResponse `json:"history_ingest"`
+	DataTrust     dataTrustStatusResponse      `json:"data_trust"`
 }
 
 type databaseStatusResponse struct {
@@ -189,6 +255,28 @@ type historyIngestStatusResponse struct {
 	LastSuccessAt           *time.Time `json:"last_success_at"`
 	LastErrorAt             *time.Time `json:"last_error_at"`
 	LastErrorKind           string     `json:"last_error_kind"`
+}
+
+type dataTrustStatusResponse struct {
+	Status                   string                       `json:"status"`
+	GeneratedAt              time.Time                    `json:"generated_at"`
+	RecentWindowMinutes      int64                        `json:"recent_window_minutes"`
+	LastPriceReceptionAt     *time.Time                   `json:"last_price_reception_at"`
+	LastHistoryReceptionAt   *time.Time                   `json:"last_history_reception_at"`
+	TotalObjects             int64                        `json:"total_objects"`
+	RecentObjects            int64                        `json:"recent_objects"`
+	RecentObjectsPercent     float64                      `json:"recent_objects_percent"`
+	Servers                  []dataCoverageStatusResponse `json:"servers"`
+	Markets                  []dataCoverageStatusResponse `json:"markets"`
+}
+
+type dataCoverageStatusResponse struct {
+	Key                  string     `json:"key"`
+	Name                 string     `json:"name"`
+	TotalObjects         int64      `json:"total_objects"`
+	RecentObjects        int64      `json:"recent_objects"`
+	RecentObjectsPercent float64    `json:"recent_objects_percent"`
+	LastUpdatedAt        *time.Time `json:"last_updated_at"`
 }
 
 func databaseStatus(healthy bool) string {
