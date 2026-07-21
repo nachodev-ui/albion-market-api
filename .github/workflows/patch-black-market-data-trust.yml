@@ -1,0 +1,115 @@
+name: Enrich Black Market opportunities with trust evidence
+
+on:
+  push:
+    branches:
+      - feat/black-market-data-trust
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/black-market-data-trust
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Add seven-day evidence to opportunity contracts and query
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          types_path = Path('internal/blackmarket/opportunities_types.go')
+          source = types_path.read_text(encoding='utf-8')
+          replacements = [
+              (
+                  '''\tPurchaseAgeMinutes         int                    `json:"purchaseAgeMinutes"`\n\tBlackMarketQuality         int16                  `json:"blackMarketQuality"`\n''',
+                  '''\tPurchaseAgeMinutes         int                    `json:"purchaseAgeMinutes"`\n\tPurchaseBuyUnitPrice       *int64                 `json:"purchaseBuyUnitPrice"`\n\tPurchaseHistoryObservations7D int64               `json:"purchaseHistoryObservations7d"`\n\tPurchaseHistoryVolume7D       int64               `json:"purchaseHistoryVolume7d"`\n\tPurchaseMedianPrice7D         *int64              `json:"purchaseMedianPrice7d"`\n\tBlackMarketQuality         int16                  `json:"blackMarketQuality"`\n''',
+              ),
+              (
+                  '''\tBlackMarketAgeMinutes      int                    `json:"blackMarketAgeMinutes"`\n\tBlackMarketSellUnitPrice   *int64                 `json:"blackMarketSellUnitPrice"`\n''',
+                  '''\tBlackMarketAgeMinutes      int                    `json:"blackMarketAgeMinutes"`\n\tBlackMarketHistoryObservations7D int64            `json:"blackMarketHistoryObservations7d"`\n\tBlackMarketHistoryVolume7D       int64            `json:"blackMarketHistoryVolume7d"`\n\tBlackMarketMedianPrice7D         *int64           `json:"blackMarketMedianPrice7d"`\n\tBlackMarketSellUnitPrice   *int64                 `json:"blackMarketSellUnitPrice"`\n''',
+              ),
+              (
+                  '''\tpurchasePriceDate         time.Time\n\tblackMarketQuality        int16\n''',
+                  '''\tpurchasePriceDate         time.Time\n\tpurchaseBuyUnitPrice      *int64\n\tpurchaseHistoryObservations7D int64\n\tpurchaseHistoryVolume7D       int64\n\tpurchaseMedianPrice7D         *int64\n\tblackMarketQuality        int16\n''',
+              ),
+              (
+                  '''\tblackMarketBuyPriceDate   time.Time\n\tblackMarketSellUnitPrice  *int64\n''',
+                  '''\tblackMarketBuyPriceDate   time.Time\n\tblackMarketHistoryObservations7D int64\n\tblackMarketHistoryVolume7D       int64\n\tblackMarketMedianPrice7D         *int64\n\tblackMarketSellUnitPrice  *int64\n''',
+              ),
+          ]
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f'opportunities_types.go insertion point not found: {old!r}')
+              source = source.replace(old, new, 1)
+          types_path.write_text(source, encoding='utf-8')
+
+          opportunities_path = Path('internal/blackmarket/opportunities.go')
+          source = opportunities_path.read_text(encoding='utf-8')
+
+          old_ctes = '''\t\twith black_market as (\n\t\t\tselect item_key, quality, buy_price_max, buy_price_max_at, sell_price_min, sell_price_min_at\n\t\t\tfrom current_market_prices\n\t\t\twhere server = $1\n\t\t\t  and location_id = $2\n\t\t\t  and buy_price_max > 0\n\t\t\t  and buy_price_max_at is not null\n\t\t\t  and buy_price_max_at >= $3\n\t\t\t  and case when item_key ~ '^T[4-8]_' then substring(item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])\n\t\t\t  and case when item_key ~ '@[0-4]$' then right(item_key, 1)::smallint else 0 end = any($6::smallint[])\n\t\t\t  and (($8 and item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and item_key ~ '^T[4-8]_OFF_') or ($11 and item_key ~ '^T[4-8]_(CAPE|BAG)_'))\n\t\t),\n\t\tsource_market as (\n\t\t\tselect location_id, item_key, quality, sell_price_min, sell_price_min_at\n\t\t\tfrom current_market_prices\n\t\t\twhere server = $1\n\t\t\t  and location_id = any($4::smallint[])\n\t\t\t  and sell_price_min > 0\n\t\t\t  and sell_price_min_at is not null\n\t\t\t  and sell_price_min_at >= $12\n\t\t\t  and case when item_key ~ '^T[4-8]_' then substring(item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])\n\t\t\t  and case when item_key ~ '@[0-4]$' then right(item_key, 1)::smallint else 0 end = any($6::smallint[])\n\t\t\t  and quality = any($7::smallint[])\n\t\t\t  and (($8 and item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and item_key ~ '^T[4-8]_OFF_') or ($11 and item_key ~ '^T[4-8]_(CAPE|BAG)_'))\n\t\t),\n'''
+          new_ctes = '''\t\twith history_stats as (\n\t\t\tselect\n\t\t\t\tlocation_id,\n\t\t\t\titem_key,\n\t\t\t\tquality,\n\t\t\t\tcount(*)::bigint as observations_7d,\n\t\t\t\tcoalesce(sum(item_count), 0)::bigint as volume_7d,\n\t\t\t\tround(\n\t\t\t\t\tpercentile_cont(0.5) within group (order by average_unit_price)\n\t\t\t\t\t\tfilter (where average_unit_price is not null)\n\t\t\t\t)::bigint as median_price_7d\n\t\t\tfrom market_history_buckets\n\t\t\twhere server = $1\n\t\t\t  and (location_id = $2 or location_id = any($4::smallint[]))\n\t\t\t  and bucket_at >= now() - interval '7 days'\n\t\t\t  and case when item_key ~ '^T[4-8]_' then substring(item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])\n\t\t\t  and case when item_key ~ '@[0-4]$' then right(item_key, 1)::smallint else 0 end = any($6::smallint[])\n\t\t\t  and (($8 and item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and item_key ~ '^T[4-8]_OFF_') or ($11 and item_key ~ '^T[4-8]_(CAPE|BAG)_'))\n\t\t\tgroup by location_id, item_key, quality\n\t\t),\n\t\tblack_market as (\n\t\t\tselect\n\t\t\t\tc.item_key, c.quality, c.buy_price_max, c.buy_price_max_at, c.sell_price_min, c.sell_price_min_at,\n\t\t\t\tcoalesce(h.observations_7d, 0) as history_observations_7d,\n\t\t\t\tcoalesce(h.volume_7d, 0) as history_volume_7d,\n\t\t\t\th.median_price_7d as history_median_price_7d\n\t\t\tfrom current_market_prices c\n\t\t\tleft join history_stats h\n\t\t\t  on h.location_id = c.location_id and h.item_key = c.item_key and h.quality = c.quality\n\t\t\twhere c.server = $1\n\t\t\t  and c.location_id = $2\n\t\t\t  and c.buy_price_max > 0\n\t\t\t  and c.buy_price_max_at is not null\n\t\t\t  and c.buy_price_max_at >= $3\n\t\t\t  and case when c.item_key ~ '^T[4-8]_' then substring(c.item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])\n\t\t\t  and case when c.item_key ~ '@[0-4]$' then right(c.item_key, 1)::smallint else 0 end = any($6::smallint[])\n\t\t\t  and (($8 and c.item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and c.item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and c.item_key ~ '^T[4-8]_OFF_') or ($11 and c.item_key ~ '^T[4-8]_(CAPE|BAG)_'))\n\t\t),\n\t\tsource_market as (\n\t\t\tselect\n\t\t\t\tc.location_id, c.item_key, c.quality, c.sell_price_min, c.sell_price_min_at, c.buy_price_max,\n\t\t\t\tcoalesce(h.observations_7d, 0) as history_observations_7d,\n\t\t\t\tcoalesce(h.volume_7d, 0) as history_volume_7d,\n\t\t\t\th.median_price_7d as history_median_price_7d\n\t\t\tfrom current_market_prices c\n\t\t\tleft join history_stats h\n\t\t\t  on h.location_id = c.location_id and h.item_key = c.item_key and h.quality = c.quality\n\t\t\twhere c.server = $1\n\t\t\t  and c.location_id = any($4::smallint[])\n\t\t\t  and c.sell_price_min > 0\n\t\t\t  and c.sell_price_min_at is not null\n\t\t\t  and c.sell_price_min_at >= $12\n\t\t\t  and case when c.item_key ~ '^T[4-8]_' then substring(c.item_key from 2 for 1)::smallint else 0 end = any($5::smallint[])\n\t\t\t  and case when c.item_key ~ '@[0-4]$' then right(c.item_key, 1)::smallint else 0 end = any($6::smallint[])\n\t\t\t  and c.quality = any($7::smallint[])\n\t\t\t  and (($8 and c.item_key ~ '^T[4-8]_(MAIN|2H)_') or ($9 and c.item_key ~ '^T[4-8]_(HEAD|ARMOR|SHOES)_') or ($10 and c.item_key ~ '^T[4-8]_OFF_') or ($11 and c.item_key ~ '^T[4-8]_(CAPE|BAG)_'))\n\t\t),\n'''
+          if old_ctes not in source:
+              raise SystemExit('Black Market CTE block not found')
+          source = source.replace(old_ctes, new_ctes, 1)
+
+          replacements = [
+              (
+                  '''\t\t\t\ts.sell_price_min_at as purchase_price_date,\n\t\t\t\tbm.quality as black_market_quality,\n''',
+                  '''\t\t\t\ts.sell_price_min_at as purchase_price_date,\n\t\t\t\ts.buy_price_max as purchase_buy_unit_price,\n\t\t\t\ts.history_observations_7d as purchase_history_observations_7d,\n\t\t\t\ts.history_volume_7d as purchase_history_volume_7d,\n\t\t\t\ts.history_median_price_7d as purchase_median_price_7d,\n\t\t\t\tbm.quality as black_market_quality,\n''',
+              ),
+              (
+                  '''\t\t\t\tbm.buy_price_max_at as black_market_buy_price_date,\n\t\t\t\tbm.sell_price_min as black_market_sell_unit_price,\n''',
+                  '''\t\t\t\tbm.buy_price_max_at as black_market_buy_price_date,\n\t\t\t\tbm.history_observations_7d as black_market_history_observations_7d,\n\t\t\t\tbm.history_volume_7d as black_market_history_volume_7d,\n\t\t\t\tbm.history_median_price_7d as black_market_median_price_7d,\n\t\t\t\tbm.sell_price_min as black_market_sell_unit_price,\n''',
+              ),
+              (
+                  '''\t\t\tpurchase_price_date,\n\t\t\tblack_market_quality,\n''',
+                  '''\t\t\tpurchase_price_date,\n\t\t\tpurchase_buy_unit_price,\n\t\t\tpurchase_history_observations_7d,\n\t\t\tpurchase_history_volume_7d,\n\t\t\tpurchase_median_price_7d,\n\t\t\tblack_market_quality,\n''',
+              ),
+              (
+                  '''\t\t\tblack_market_buy_price_date,\n\t\t\tblack_market_sell_unit_price,\n''',
+                  '''\t\t\tblack_market_buy_price_date,\n\t\t\tblack_market_history_observations_7d,\n\t\t\tblack_market_history_volume_7d,\n\t\t\tblack_market_median_price_7d,\n\t\t\tblack_market_sell_unit_price,\n''',
+              ),
+              (
+                  '''\t\t\t&row.purchasePriceDate,\n\t\t\t&row.blackMarketQuality,\n''',
+                  '''\t\t\t&row.purchasePriceDate,\n\t\t\t&row.purchaseBuyUnitPrice,\n\t\t\t&row.purchaseHistoryObservations7D,\n\t\t\t&row.purchaseHistoryVolume7D,\n\t\t\t&row.purchaseMedianPrice7D,\n\t\t\t&row.blackMarketQuality,\n''',
+              ),
+              (
+                  '''\t\t\t&row.blackMarketBuyPriceDate,\n\t\t\t&row.blackMarketSellUnitPrice,\n''',
+                  '''\t\t\t&row.blackMarketBuyPriceDate,\n\t\t\t&row.blackMarketHistoryObservations7D,\n\t\t\t&row.blackMarketHistoryVolume7D,\n\t\t\t&row.blackMarketMedianPrice7D,\n\t\t\t&row.blackMarketSellUnitPrice,\n''',
+              ),
+              (
+                  '''\t\t\tPurchaseAgeMinutes:         purchaseAge,\n\t\t\tBlackMarketQuality:         row.blackMarketQuality,\n''',
+                  '''\t\t\tPurchaseAgeMinutes:              purchaseAge,\n\t\t\tPurchaseBuyUnitPrice:            row.purchaseBuyUnitPrice,\n\t\t\tPurchaseHistoryObservations7D:   row.purchaseHistoryObservations7D,\n\t\t\tPurchaseHistoryVolume7D:         row.purchaseHistoryVolume7D,\n\t\t\tPurchaseMedianPrice7D:           row.purchaseMedianPrice7D,\n\t\t\tBlackMarketQuality:              row.blackMarketQuality,\n''',
+              ),
+              (
+                  '''\t\t\tBlackMarketAgeMinutes:      blackMarketAge,\n\t\t\tBlackMarketSellUnitPrice:   row.blackMarketSellUnitPrice,\n''',
+                  '''\t\t\tBlackMarketAgeMinutes:           blackMarketAge,\n\t\t\tBlackMarketHistoryObservations7D: row.blackMarketHistoryObservations7D,\n\t\t\tBlackMarketHistoryVolume7D:       row.blackMarketHistoryVolume7D,\n\t\t\tBlackMarketMedianPrice7D:         row.blackMarketMedianPrice7D,\n\t\t\tBlackMarketSellUnitPrice:        row.blackMarketSellUnitPrice,\n''',
+              ),
+          ]
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f'opportunities.go insertion point not found: {old!r}')
+              source = source.replace(old, new, 1)
+          opportunities_path.write_text(source, encoding='utf-8')
+          PY
+      - name: Apply gofmt
+        run: gofmt -w internal/blackmarket/opportunities.go internal/blackmarket/opportunities_types.go
+      - name: Remove temporary workflow
+        run: rm -f .github/workflows/patch-black-market-data-trust.yml
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: add trust evidence to Black Market opportunities'
+          git push origin HEAD:feat/black-market-data-trust
