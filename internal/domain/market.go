@@ -176,7 +176,7 @@ type HistoryQueryEntry struct {
 type MarketHistoryLookup struct {
 	Server            Server
 	LocationIDs       []int16
-	Entries            []HistoryQueryEntry
+	Entries           []HistoryQueryEntry
 	RangeStart        time.Time
 	RangeEndExclusive time.Time
 }

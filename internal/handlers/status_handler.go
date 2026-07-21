@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	databaseStatusTimeout = 2 * time.Second
+	databaseStatusTimeout  = 2 * time.Second
 	dataTrustStatusTimeout = 4 * time.Second
 	dataTrustRecentWindow  = 6 * time.Hour
 )
@@ -152,16 +152,16 @@ func (h *StatusHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 func buildDataTrustStatus(now time.Time, snapshot observability.DataTrustSnapshot) dataTrustStatusResponse {
 	response := dataTrustStatusResponse{
-		Status:                   "ok",
-		GeneratedAt:              now,
-		RecentWindowMinutes:      int64(dataTrustRecentWindow / time.Minute),
-		LastPriceReceptionAt:     snapshot.LastPriceReceptionAt,
-		LastHistoryReceptionAt:   snapshot.LastHistoryReceptionAt,
-		TotalObjects:             snapshot.TotalObjects,
-		RecentObjects:            snapshot.RecentObjects,
-		RecentObjectsPercent:     coveragePercent(snapshot.RecentObjects, snapshot.TotalObjects),
-		Servers:                  make([]dataCoverageStatusResponse, 0, len(snapshot.Servers)),
-		Markets:                  make([]dataCoverageStatusResponse, 0, len(snapshot.Markets)),
+		Status:                 "ok",
+		GeneratedAt:            now,
+		RecentWindowMinutes:    int64(dataTrustRecentWindow / time.Minute),
+		LastPriceReceptionAt:   snapshot.LastPriceReceptionAt,
+		LastHistoryReceptionAt: snapshot.LastHistoryReceptionAt,
+		TotalObjects:           snapshot.TotalObjects,
+		RecentObjects:          snapshot.RecentObjects,
+		RecentObjectsPercent:   coveragePercent(snapshot.RecentObjects, snapshot.TotalObjects),
+		Servers:                make([]dataCoverageStatusResponse, 0, len(snapshot.Servers)),
+		Markets:                make([]dataCoverageStatusResponse, 0, len(snapshot.Markets)),
 	}
 	for _, coverage := range snapshot.Servers {
 		response.Servers = append(response.Servers, buildCoverageStatus(coverage))
@@ -200,7 +200,7 @@ type statusResponse struct {
 	Database      databaseStatusResponse      `json:"database"`
 	Ingest        ingestStatusResponse        `json:"ingest"`
 	HistoryIngest historyIngestStatusResponse `json:"history_ingest"`
-	DataTrust     dataTrustStatusResponse      `json:"data_trust"`
+	DataTrust     dataTrustStatusResponse     `json:"data_trust"`
 }
 
 type databaseStatusResponse struct {
@@ -258,16 +258,16 @@ type historyIngestStatusResponse struct {
 }
 
 type dataTrustStatusResponse struct {
-	Status                   string                       `json:"status"`
-	GeneratedAt              time.Time                    `json:"generated_at"`
-	RecentWindowMinutes      int64                        `json:"recent_window_minutes"`
-	LastPriceReceptionAt     *time.Time                   `json:"last_price_reception_at"`
-	LastHistoryReceptionAt   *time.Time                   `json:"last_history_reception_at"`
-	TotalObjects             int64                        `json:"total_objects"`
-	RecentObjects            int64                        `json:"recent_objects"`
-	RecentObjectsPercent     float64                      `json:"recent_objects_percent"`
-	Servers                  []dataCoverageStatusResponse `json:"servers"`
-	Markets                  []dataCoverageStatusResponse `json:"markets"`
+	Status                 string                       `json:"status"`
+	GeneratedAt            time.Time                    `json:"generated_at"`
+	RecentWindowMinutes    int64                        `json:"recent_window_minutes"`
+	LastPriceReceptionAt   *time.Time                   `json:"last_price_reception_at"`
+	LastHistoryReceptionAt *time.Time                   `json:"last_history_reception_at"`
+	TotalObjects           int64                        `json:"total_objects"`
+	RecentObjects          int64                        `json:"recent_objects"`
+	RecentObjectsPercent   float64                      `json:"recent_objects_percent"`
+	Servers                []dataCoverageStatusResponse `json:"servers"`
+	Markets                []dataCoverageStatusResponse `json:"markets"`
 }
 
 type dataCoverageStatusResponse struct {

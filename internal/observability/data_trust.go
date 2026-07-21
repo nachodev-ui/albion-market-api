@@ -9,11 +9,11 @@ import (
 // DataCoverage describes how much of the current read model is represented by
 // recent observations for one public server or market.
 type DataCoverage struct {
-	Key             string
-	Name            string
-	TotalObjects    int64
-	RecentObjects   int64
-	LastUpdatedAt   *time.Time
+	Key           string
+	Name          string
+	TotalObjects  int64
+	RecentObjects int64
+	LastUpdatedAt *time.Time
 }
 
 // DataTrustSnapshot is a read-only operational projection derived from the
