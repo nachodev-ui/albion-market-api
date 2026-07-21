@@ -18,51 +18,53 @@ jobs:
           ref: feat/data-trust-center
           fetch-depth: 0
       - name: Add trust properties to CurrentPrice
-        shell: python
+        shell: bash
         run: |
+          python3 - <<'PY'
           from pathlib import Path
 
           path = Path('openapi/openapi.yaml')
           source = path.read_text(encoding='utf-8')
           old = """        - buyPriceMaxDate
-        - updatedAt
-      properties:
-"""
+                  - updatedAt
+                properties:
+          """
           new = """        - buyPriceMaxDate
-        - updatedAt
-        - historyObservations7d
-        - historyVolume7d
-        - medianPrice7d
-      properties:
-"""
+                  - updatedAt
+                  - historyObservations7d
+                  - historyVolume7d
+                  - medianPrice7d
+                properties:
+          """
           if old not in source:
               raise SystemExit('CurrentPrice required block not found')
           source = source.replace(old, new, 1)
           old = """        updatedAt:
-          type: string
-          format: date-time
-    PriceQueryResponse:
-"""
+                    type: string
+                    format: date-time
+              PriceQueryResponse:
+          """
           new = """        updatedAt:
-          type: string
-          format: date-time
-        historyObservations7d:
-          type: integer
-          format: int64
-          minimum: 0
-        historyVolume7d:
-          type: integer
-          format: int64
-          minimum: 0
-        medianPrice7d:
-          type: [integer, 'null']
-          format: int64
-          minimum: 0
-    PriceQueryResponse:
-"""
+                    type: string
+                    format: date-time
+                  historyObservations7d:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  historyVolume7d:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  medianPrice7d:
+                    type: [integer, 'null']
+                    format: int64
+                    minimum: 0
+              PriceQueryResponse:
+          """
           if old not in source:
               raise SystemExit('CurrentPrice properties block not found')
           path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Commit contract update
         shell: bash
         run: |
