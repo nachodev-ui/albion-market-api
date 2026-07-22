@@ -312,17 +312,18 @@ func main() {
 		logger.Error("api.shutdown_failed", observability.F("error", err))
 		return
 	}
-	logger.Success("api.stopped", observability.F("reason", strings.TrimSpace(ctx.Err().Error())))
+
+	logger.Success("api.stopped", observability.F("uptime", time.Since(startedAt).Round(time.Millisecond)))
 }
 
 func durationMilliseconds(duration time.Duration) float64 {
 	return float64(duration.Microseconds()) / 1000
 }
 
-func credentialIDs(sources []config.IngestCredentialSource) []string {
-	identifiers := make([]string, 0, len(sources))
+func credentialIDs(sources []config.CredentialSource) string {
+	ids := make([]string, 0, len(sources))
 	for _, source := range sources {
-		identifiers = append(identifiers, source.ID)
+		ids = append(ids, source.ID+":"+source.Source)
 	}
-	return identifiers
+	return strings.Join(ids, ",")
 }
