@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	ErrInvalid = errors.New("invalid economic profile")
+	ErrInvalid  = errors.New("invalid economic profile")
 	ErrNotFound = errors.New("economic profile not found")
 )
 
@@ -49,27 +49,27 @@ type Specialization struct {
 }
 
 type Profile struct {
-	Server              string           `json:"server"`
-	PremiumActive       bool             `json:"premiumActive"`
-	DailyFocusBalance   int              `json:"dailyFocusBalance"`
-	HomeCity            string           `json:"homeCity"`
-	GuildHasIsland      bool             `json:"guildHasIsland"`
-	SalesTaxRate        float64          `json:"salesTaxRate"`
-	TransportCost       int64            `json:"transportCost"`
-	Specializations     []Specialization `json:"specializations"`
-	CreatedAt           time.Time        `json:"createdAt"`
-	UpdatedAt           time.Time        `json:"updatedAt"`
+	Server            string           `json:"server"`
+	PremiumActive     bool             `json:"premiumActive"`
+	DailyFocusBalance int              `json:"dailyFocusBalance"`
+	HomeCity          string           `json:"homeCity"`
+	GuildHasIsland    bool             `json:"guildHasIsland"`
+	SalesTaxRate      float64          `json:"salesTaxRate"`
+	TransportCost     int64            `json:"transportCost"`
+	Specializations   []Specialization `json:"specializations"`
+	CreatedAt         time.Time        `json:"createdAt"`
+	UpdatedAt         time.Time        `json:"updatedAt"`
 }
 
 type Input struct {
-	Server              string           `json:"server"`
-	PremiumActive       bool             `json:"premiumActive"`
-	DailyFocusBalance   int              `json:"dailyFocusBalance"`
-	HomeCity            string           `json:"homeCity"`
-	GuildHasIsland      bool             `json:"guildHasIsland"`
-	SalesTaxRate        float64          `json:"salesTaxRate"`
-	TransportCost       int64            `json:"transportCost"`
-	Specializations     []Specialization `json:"specializations"`
+	Server            string           `json:"server"`
+	PremiumActive     bool             `json:"premiumActive"`
+	DailyFocusBalance int              `json:"dailyFocusBalance"`
+	HomeCity          string           `json:"homeCity"`
+	GuildHasIsland    bool             `json:"guildHasIsland"`
+	SalesTaxRate      float64          `json:"salesTaxRate"`
+	TransportCost     int64            `json:"transportCost"`
+	Specializations   []Specialization `json:"specializations"`
 }
 
 type Service struct {
