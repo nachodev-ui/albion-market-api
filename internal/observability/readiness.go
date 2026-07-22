@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const ExpectedSchemaVersion = 16
+const ExpectedSchemaVersion = 17
 
 const (
 	ReadinessComponentPool     = "database_pool"
@@ -28,6 +28,7 @@ var requiredReadinessRelations = []string{
 	"public.billing_webhook_events",
 	"public.plan_entitlements",
 	"public.plans",
+	"public.player_economic_profiles",
 	"public.saved_calculations",
 	"public.saved_presets",
 	"public.subscriptions",
