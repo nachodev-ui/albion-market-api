@@ -6,6 +6,7 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/accounts"
 	"github.com/nachodev-ui/albion-market-api/internal/billing"
 	"github.com/nachodev-ui/albion-market-api/internal/blackmarket"
+	"github.com/nachodev-ui/albion-market-api/internal/economicprofile"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 	"github.com/nachodev-ui/albion-market-api/internal/playerprofile"
 	"github.com/nachodev-ui/albion-market-api/internal/saveddata"
@@ -17,13 +18,14 @@ type AccountAuthenticator interface {
 }
 
 type AccountRoutes struct {
-	Handler              *accounts.Handler
-	Service              *accounts.Service
-	BillingHandler       *billing.Handler
-	PlayerProfileHandler *playerprofile.Handler
-	BlackMarketHandler   *blackmarket.Handler
-	SavedDataHandler     *saveddata.Handler
-	Authenticator        AccountAuthenticator
+	Handler                *accounts.Handler
+	Service                *accounts.Service
+	BillingHandler         *billing.Handler
+	PlayerProfileHandler   *playerprofile.Handler
+	EconomicProfileHandler *economicprofile.Handler
+	BlackMarketHandler     *blackmarket.Handler
+	SavedDataHandler       *saveddata.Handler
+	Authenticator          AccountAuthenticator
 }
 
 func NewRouter(
@@ -82,6 +84,15 @@ func NewRouter(
 			mux.HandleFunc("/api/v1/me/albion-profile/link", profileHandler.Link)
 			mux.HandleFunc("/api/v1/me/albion-profile/unlink", profileHandler.Unlink)
 			mux.HandleFunc("/api/v1/me/albion-profile/refresh", profileHandler.Refresh)
+		}
+		if routes.EconomicProfileHandler != nil && routes.Authenticator != nil {
+			mux.Handle(
+				"/api/v1/me/economic-profile",
+				routes.Authenticator.RequireScope(
+					"read:account",
+					http.HandlerFunc(routes.EconomicProfileHandler.Profile),
+				),
+			)
 		}
 		if routes.SavedDataHandler != nil && routes.Authenticator != nil {
 			protectSavedData := func(handler http.Handler) http.Handler {
