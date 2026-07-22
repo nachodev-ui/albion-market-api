@@ -136,7 +136,7 @@ func main() {
 			billing.ServiceConfig{
 				ProviderName:       billingCfg.Provider,
 				StoreID:            billingCfg.StoreID,
-				VariantID:           billingCfg.VariantID,
+				VariantID:          billingCfg.VariantID,
 				ExpectedTestMode:   billingCfg.TestMode,
 				PastDueGracePeriod: billingCfg.GracePeriod,
 			},
