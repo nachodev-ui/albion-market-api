@@ -10,7 +10,7 @@ alter table subscriptions
     add constraint subscriptions_provider_order_length
     check (provider_order_id is null or length(provider_order_id) between 1 and 128);
 
-create index if not exists subscriptions_provider_order_idx
+create unique index if not exists subscriptions_provider_order_unique
     on subscriptions (provider, provider_order_id)
     where provider_order_id is not null;
 
