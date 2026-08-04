@@ -1,3 +1,3 @@
-requested_at=2026-08-04T19:47:00Z
+requested_at=2026-08-04T20:25:00Z
 mode=supervised-workflow-dispatch
-reason=deploy Lemon Squeezy production hardening with billing disabled and publish audited status
+reason=retry Lemon Squeezy production hardening using latest linked main with audited Render metadata
