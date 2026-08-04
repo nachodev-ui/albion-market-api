@@ -171,6 +171,7 @@ func (w *WebhookWorker) claim(ctx context.Context) (queuedWebhook, bool, error) 
 		)
 		update billing_webhook_events as event
 		set status = 'processing',
+			attempt_count = event.attempt_count + 1,
 			locked_at = now(),
 			locked_by = $4,
 			last_attempt_at = now()
