@@ -42,7 +42,7 @@ func TestValidateAndSanitizeWebhookRejectsHeaderMismatch(t *testing.T) {
 func TestValidateWebhookScopeAllowsPlanDowngradeUpdates(t *testing.T) {
 	t.Parallel()
 	service := &Service{storeID: "11", variantID: "33", expectedTestMode: false}
-	var envelope lemonWebhookEnvelope
+	var envelope productionWebhookEnvelope
 	envelope.Meta.EventName = "subscription_updated"
 	envelope.Data.Type = "subscriptions"
 	envelope.Data.ID = "9001"
@@ -56,7 +56,7 @@ func TestValidateWebhookScopeAllowsPlanDowngradeUpdates(t *testing.T) {
 func TestValidateWebhookScopeRejectsWrongStore(t *testing.T) {
 	t.Parallel()
 	service := &Service{storeID: "11", variantID: "33", expectedTestMode: false}
-	var envelope lemonWebhookEnvelope
+	var envelope productionWebhookEnvelope
 	envelope.Meta.EventName = "subscription_created"
 	envelope.Data.Type = "subscriptions"
 	envelope.Data.ID = "9001"
