@@ -1,0 +1,71 @@
+name: Diagnose Render production once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/diagnose-render-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Probe Render production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      API_URL: https://albion-market-api.onrender.com
+      EXPECTED_REVISION: 4c97192041866db3ba4fa5d4aee757d36838a888
+    steps:
+      - name: Resolve and probe production
+        shell: bash
+        run: |
+          set +e
+
+          echo '=== DNS ==='
+          getent ahosts albion-market-api.onrender.com || true
+
+          probe() {
+            local path="$1"
+            local name="$2"
+            local body
+            local headers
+            body="$(mktemp)"
+            headers="$(mktemp)"
+            status="$(curl --silent --show-error --max-time 30 \
+              --output "${body}" --dump-header "${headers}" \
+              --write-out '%{http_code}' "${API_URL}${path}")"
+            curl_exit=$?
+            echo "=== ${name} ==="
+            echo "curl_exit=${curl_exit} status=${status}"
+            tr -d '\r' < "${headers}" | sed -n '1,30p'
+            echo '--- body ---'
+            sed -n '1,80p' "${body}"
+            rm -f "${body}" "${headers}"
+          }
+
+          probe '/healthz' 'healthz'
+          probe '/readyz' 'readyz'
+          probe '/api/v1/me' 'auth probe'
+
+          echo '=== metrics build info ==='
+          metrics="$(curl --silent --show-error --max-time 30 "${API_URL}/metrics")"
+          metrics_exit=$?
+          echo "curl_exit=${metrics_exit}"
+          grep -E 'albion_market_api_build_info|billing' <<< "${metrics}" | head -n 80 || true
+
+          if grep -Fq "revision=\"${EXPECTED_REVISION}\"" <<< "${metrics}"; then
+            echo 'expected_revision_served=true'
+          else
+            echo 'expected_revision_served=false'
+          fi
+
+      - name: Publish diagnostic summary
+        if: always()
+        run: |
+          {
+            echo '### Render diagnostic'
+            echo
+            echo '- Expected revision: `4c97192041866db3ba4fa5d4aee757d36838a888`'
+            echo '- Review the probe log for DNS, HTTP, health, readiness and build metadata.'
+          } >> "${GITHUB_STEP_SUMMARY}"
