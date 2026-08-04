@@ -11,6 +11,7 @@ on:
 permissions:
   actions: write
   contents: read
+  statuses: write
 
 concurrency:
   group: dispatch-production-once
@@ -18,17 +19,51 @@ concurrency:
 
 jobs:
   dispatch:
-    name: Dispatch protected Render production workflow
+    name: Dispatch and supervise protected Render production workflow
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Dispatch deploy-production.yml with explicit confirmation
+      - name: Dispatch and supervise deploy-production.yml
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          payload="$(jq -n \
+          api_headers=(
+            --header "Authorization: Bearer ${GITHUB_TOKEN}"
+            --header 'Accept: application/vnd.github+json'
+            --header 'X-GitHub-Api-Version: 2022-11-28'
+          )
+
+          post_status() {
+            local state="$1"
+            local description="$2"
+            local target_url="${3:-${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions}"
+            local status_payload
+            status_payload="$(jq -n \
+              --arg state "${state}" \
+              --arg context 'deploy/render-production' \
+              --arg description "${description}" \
+              --arg target_url "${target_url}" \
+              '{state: $state, context: $context, description: $description, target_url: $target_url}')"
+
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --retry 5 \
+              --retry-all-errors \
+              --request POST \
+              "${api_headers[@]}" \
+              --data "${status_payload}" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+              >/dev/null
+          }
+
+          post_status pending 'Protected Render production deployment is running'
+
+          dispatch_payload="$(jq -n \
             --arg ref main \
             --arg confirm DEPLOY \
             '{ref: $ref, inputs: {confirm: $confirm}}')"
@@ -37,11 +72,77 @@ jobs:
             --fail \
             --silent \
             --show-error \
+            --retry 5 \
+            --retry-all-errors \
             --request POST \
-            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
-            --header 'Accept: application/vnd.github+json' \
-            --header 'X-GitHub-Api-Version: 2022-11-28' \
-            --data "${payload}" \
+            "${api_headers[@]}" \
+            --data "${dispatch_payload}" \
             "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/dispatches"
 
-          echo 'Protected production workflow dispatched.'
+          runs_url="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?branch=main&event=workflow_dispatch&per_page=20"
+          run_id=''
+
+          for attempt in $(seq 1 40); do
+            runs="$(curl \
+              --fail \
+              --silent \
+              --show-error \
+              --retry 5 \
+              --retry-all-errors \
+              "${api_headers[@]}" \
+              "${runs_url}")"
+
+            run_id="$(jq -r \
+              --arg sha "${GITHUB_SHA}" \
+              '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.created_at) | last | .id // empty' \
+              <<< "${runs}")"
+
+            if [[ -n "${run_id}" ]]; then
+              break
+            fi
+
+            echo "Attempt ${attempt}/40: waiting for the protected deployment run to appear."
+            sleep 5
+          done
+
+          if [[ -z "${run_id}" ]]; then
+            post_status failure 'Protected deployment run was not created'
+            echo 'The protected production workflow did not appear after dispatch.' >&2
+            exit 1
+          fi
+
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+          post_status pending 'Render production deployment is in progress' "${run_url}"
+
+          for attempt in $(seq 1 150); do
+            run="$(curl \
+              --fail \
+              --silent \
+              --show-error \
+              --retry 5 \
+              --retry-all-errors \
+              "${api_headers[@]}" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+
+            status="$(jq -r '.status' <<< "${run}")"
+            conclusion="$(jq -r '.conclusion // empty' <<< "${run}")"
+
+            if [[ "${status}" == 'completed' ]]; then
+              if [[ "${conclusion}" == 'success' ]]; then
+                post_status success 'Render production deployment passed' "${run_url}"
+                echo "Protected production deployment completed successfully: ${run_url}"
+                exit 0
+              fi
+
+              post_status failure "Render production deployment ${conclusion:-failed}" "${run_url}"
+              echo "Protected production deployment concluded with ${conclusion:-unknown}: ${run_url}" >&2
+              exit 1
+            fi
+
+            echo "Attempt ${attempt}/150: deployment status=${status}."
+            sleep 10
+          done
+
+          post_status failure 'Render production deployment timed out' "${run_url}"
+          echo "Protected production deployment timed out: ${run_url}" >&2
+          exit 1
