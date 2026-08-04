@@ -1,29 +1,39 @@
 package billing
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/nachodev-ui/albion-market-api/internal/authn"
 )
 
 type Handler struct {
-	service             *Service
-	webhookSecret       []byte
-	maxWebhookBodyBytes int64
+	service              *Service
+	webhookSecret        []byte
+	maxWebhookBodyBytes  int64
+	webhookIngestTimeout time.Duration
 }
 
-func NewHandler(service *Service, webhookSecret string, maxWebhookBodyBytes int64) *Handler {
+func NewHandler(
+	service *Service,
+	webhookSecret string,
+	maxWebhookBodyBytes int64,
+	webhookIngestTimeout time.Duration,
+) *Handler {
 	return &Handler{
-		service:             service,
-		webhookSecret:       []byte(webhookSecret),
-		maxWebhookBodyBytes: maxWebhookBodyBytes,
+		service:              service,
+		webhookSecret:        []byte(webhookSecret),
+		maxWebhookBodyBytes:  maxWebhookBodyBytes,
+		webhookIngestTimeout: webhookIngestTimeout,
 	}
 }
 
@@ -88,8 +98,19 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if h == nil || h.service == nil || len(h.webhookSecret) == 0 || h.maxWebhookBodyBytes <= 0 {
+	if h == nil || h.service == nil || len(h.webhookSecret) == 0 ||
+		h.maxWebhookBodyBytes <= 0 || h.webhookIngestTimeout <= 0 {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "billing unavailable"})
+		return
+	}
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "content type must be application/json"})
+		return
+	}
+
+	eventName := strings.TrimSpace(r.Header.Get("X-Event-Name"))
+	if !isSupportedWebhookEvent(eventName) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported webhook event"})
 		return
 	}
 
@@ -104,25 +125,37 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
+	if len(raw) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "request body is empty"})
+		return
+	}
 	if !validSignature(h.webhookSecret, raw, r.Header.Get("X-Signature")) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid webhook signature"})
 		return
 	}
 
-	result, err := h.service.ProcessWebhook(r.Context(), raw)
+	ctx, cancel := context.WithTimeout(r.Context(), h.webhookIngestTimeout)
+	defer cancel()
+	result, err := h.service.EnqueueWebhook(ctx, raw, eventName)
 	if err != nil {
 		if errors.Is(err, ErrInvalidWebhook) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid webhook payload"})
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "webhook processing failed"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "webhook queue unavailable"})
 		return
 	}
+
+	// Lemon Squeezy treats any non-200 response as a failed delivery and retries it.
+	// At this point the event is durably stored, so processing is delegated to the worker.
 	writeJSON(w, http.StatusOK, result)
 }
 
 func validSignature(secret, raw []byte, signature string) bool {
 	signature = strings.TrimSpace(signature)
+	if len(signature) != sha256.Size*2 {
+		return false
+	}
 	provided, err := hex.DecodeString(signature)
 	if err != nil || len(provided) != sha256.Size {
 		return false
@@ -130,6 +163,11 @@ func validSignature(secret, raw []byte, signature string) bool {
 	mac := hmac.New(sha256.New, secret)
 	_, _ = mac.Write(raw)
 	return hmac.Equal(mac.Sum(nil), provided)
+}
+
+func isJSONContentType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(value))
+	return err == nil && strings.EqualFold(mediaType, "application/json")
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
