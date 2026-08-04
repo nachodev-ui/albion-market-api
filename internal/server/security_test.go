@@ -134,7 +134,7 @@ func TestRateLimiterUsesTokenBucket(t *testing.T) {
 	}
 }
 
-func TestRateLimitMiddlewareReturns429AndExemptsOperationalEndpoints(t *testing.T) {
+func TestRateLimitMiddlewareReturns429AndExemptsTrustedEndpoints(t *testing.T) {
 	t.Parallel()
 
 	limiter := newIPRateLimiter(RateLimitOptions{
@@ -161,11 +161,19 @@ func TestRateLimitMiddlewareReturns429AndExemptsOperationalEndpoints(t *testing.
 		t.Fatal("Retry-After header is missing")
 	}
 
-	for _, path := range []string{"/healthz", "/readyz", "/metrics"} {
+	for _, item := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/healthz"},
+		{http.MethodGet, "/readyz"},
+		{http.MethodGet, "/metrics"},
+		{http.MethodPost, "/api/v1/webhooks/lemonsqueezy"},
+	} {
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		handler.ServeHTTP(response, httptest.NewRequest(item.method, item.path, nil))
 		if response.Code != http.StatusNoContent {
-			t.Fatalf("%s status = %d, want %d", path, response.Code, http.StatusNoContent)
+			t.Fatalf("%s status = %d, want %d", item.path, response.Code, http.StatusNoContent)
 		}
 	}
 }
