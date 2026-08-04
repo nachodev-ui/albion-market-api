@@ -62,6 +62,7 @@ func TestRequiredReadinessRelationsContainAccountSavedDataSchema(t *testing.T) {
 		"public.app_schema_state":           false,
 		"public.account_admin_audit_events": false,
 		"public.app_admins":                 false,
+		"public.player_economic_profiles":   false,
 		"public.saved_presets":              false,
 		"public.saved_calculations":         false,
 	}
@@ -75,7 +76,7 @@ func TestRequiredReadinessRelationsContainAccountSavedDataSchema(t *testing.T) {
 			t.Fatalf("readiness relations do not include %s", relation)
 		}
 	}
-	if ExpectedSchemaVersion != 16 {
-		t.Fatalf("ExpectedSchemaVersion = %d, want 16", ExpectedSchemaVersion)
+	if ExpectedSchemaVersion != 17 {
+		t.Fatalf("ExpectedSchemaVersion = %d, want 17", ExpectedSchemaVersion)
 	}
 }

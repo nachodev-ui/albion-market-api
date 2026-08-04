@@ -16,6 +16,7 @@ import (
 	"github.com/nachodev-ui/albion-market-api/internal/billing"
 	"github.com/nachodev-ui/albion-market-api/internal/blackmarket"
 	"github.com/nachodev-ui/albion-market-api/internal/config"
+	"github.com/nachodev-ui/albion-market-api/internal/economicprofile"
 	"github.com/nachodev-ui/albion-market-api/internal/handlers"
 	"github.com/nachodev-ui/albion-market-api/internal/ingestauth"
 	"github.com/nachodev-ui/albion-market-api/internal/marketcatalog"
@@ -87,6 +88,8 @@ func main() {
 	accountHandler := accounts.NewHandler(accountService)
 	savedDataService := saveddata.NewService(dbpool, accountService)
 	savedDataHandler := saveddata.NewHandler(savedDataService, cfg.MaxPublicBodyBytes)
+	economicProfileService := economicprofile.NewService(dbpool, accountService)
+	economicProfileHandler := economicprofile.NewHandler(economicProfileService, cfg.MaxPublicBodyBytes)
 	blackMarketService := blackmarket.NewService(dbpool, marketcatalog.NewDefault())
 	blackMarketHandler := blackmarket.NewHandler(blackMarketService, cfg.MaxPublicBodyBytes)
 	profileRepository, err := playerprofile.NewPostgresRepository(dbpool)
@@ -229,13 +232,14 @@ func main() {
 			Logger:      logger,
 		},
 		server.AccountRoutes{
-			Handler:              accountHandler,
-			Service:              accountService,
-			BillingHandler:       billingHandler,
-			PlayerProfileHandler: profileHandler,
-			BlackMarketHandler:   blackMarketHandler,
-			SavedDataHandler:     savedDataHandler,
-			Authenticator:        accountAuthenticator,
+			Handler:                accountHandler,
+			Service:                accountService,
+			BillingHandler:         billingHandler,
+			PlayerProfileHandler:   profileHandler,
+			EconomicProfileHandler: economicProfileHandler,
+			BlackMarketHandler:     blackMarketHandler,
+			SavedDataHandler:       savedDataHandler,
+			Authenticator:          accountAuthenticator,
 		},
 	)
 
@@ -267,6 +271,7 @@ func main() {
 			observability.F("black_market_analysis", "/api/v1/black-market/analysis"),
 			observability.F("account_me", "/api/v1/me"),
 			observability.F("account_entitlements", "/api/v1/me/entitlements"),
+			observability.F("economic_profile", "/api/v1/me/economic-profile"),
 			observability.F("saved_presets", "/api/v1/me/presets"),
 			observability.F("saved_calculations", "/api/v1/me/calculations"),
 			observability.F("auth_enabled", authCfg.Enabled),
