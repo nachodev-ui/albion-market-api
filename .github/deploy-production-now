@@ -1,3 +1,3 @@
-revision=c2516dd817ed034cc59bac710e5bd5b95bdef173
-requested_at=2026-08-04T19:40:00Z
-reason=deploy Lemon Squeezy production hardening with billing disabled
+requested_at=2026-08-04T19:47:00Z
+mode=supervised-workflow-dispatch
+reason=deploy Lemon Squeezy production hardening with billing disabled and publish audited status
