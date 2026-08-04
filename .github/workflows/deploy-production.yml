@@ -20,7 +20,7 @@ jobs:
     name: Migrate Neon and deploy API to Render
     if: github.ref == 'refs/heads/main' && inputs.confirm == 'DEPLOY'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     environment: production
     env:
       API_URL: https://albion-market-api.onrender.com
@@ -50,6 +50,11 @@ jobs:
           revision="$(git rev-parse HEAD)"
           version="$(git rev-parse --short=12 HEAD)"
           created="$(git show -s --format=%cI HEAD)"
+          remote_revision="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ "${remote_revision}" != "${revision}" ]]; then
+            echo "main moved from ${revision} to ${remote_revision}; refusing an ambiguous deployment." >&2
+            exit 1
+          fi
           {
             echo "revision=${revision}"
             echo "version=${version}"
@@ -82,7 +87,8 @@ jobs:
             "${MIGRATION_IMAGE}" \
             /usr/local/bin/migrate
 
-      - name: Trigger the exact revision on Render
+      - name: Trigger latest linked main commit on Render
+        id: render
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         shell: bash
@@ -92,34 +98,51 @@ jobs:
             echo "RENDER_DEPLOY_HOOK_URL is required in the production Environment." >&2
             exit 1
           fi
-          separator="?"
-          if [[ "${RENDER_DEPLOY_HOOK_URL}" == *"?"* ]]; then
-            separator="&"
-          fi
-          curl \
-            --fail \
-            --show-error \
+
+          response_file="$(mktemp)"
+          http_status="$(curl \
             --silent \
+            --show-error \
             --request POST \
-            "${RENDER_DEPLOY_HOOK_URL}${separator}ref=${{ steps.metadata.outputs.revision }}" \
-            > render-deploy-response.json
-          jq -e . render-deploy-response.json > /dev/null
+            --output "${response_file}" \
+            --write-out '%{http_code}' \
+            "${RENDER_DEPLOY_HOOK_URL}")"
+
+          if [[ "${http_status}" != '200' && "${http_status}" != '202' ]]; then
+            echo "Render deploy hook returned HTTP ${http_status}." >&2
+            jq -c '{id: (.id // .deploy.id // null), status: (.status // .deploy.status // null)}' "${response_file}" 2>/dev/null || true
+            exit 1
+          fi
+
+          jq -e . "${response_file}" > /dev/null
+          deploy_id="$(jq -r '.id // .deploy.id // empty' "${response_file}")"
+          deploy_status="$(jq -r '.status // .deploy.status // empty' "${response_file}")"
+          {
+            echo "http_status=${http_status}"
+            echo "deploy_id=${deploy_id}"
+            echo "deploy_status=${deploy_status}"
+          } >> "${GITHUB_OUTPUT}"
+
+          echo "Render accepted latest-main deployment: HTTP ${http_status}, deploy_id=${deploy_id:-queued}, status=${deploy_status:-queued}."
 
       - name: Wait for Render to serve the exact revision
         shell: bash
         run: |
           set -euo pipefail
           expected_revision="${{ steps.metadata.outputs.revision }}"
-          for attempt in $(seq 1 90); do
+          for attempt in $(seq 1 180); do
             metrics="$(curl --fail --silent --show-error --max-time 10 "${API_URL}/metrics" 2>/dev/null || true)"
             if grep -Eq "albion_market_api_build_info\\{[^}]*revision=\"${expected_revision}\"" <<< "${metrics}"; then
               echo "Render is serving revision ${expected_revision}."
               exit 0
             fi
-            echo "Attempt ${attempt}/90: Render has not promoted the expected revision yet."
+            if (( attempt == 1 || attempt % 15 == 0 )); then
+              current_build="$(grep -E '^albion_market_api_build_info\{' <<< "${metrics}" | head -n 1 || true)"
+              echo "Attempt ${attempt}/180: expected=${expected_revision}; current=${current_build:-unavailable}; hook_http=${{ steps.render.outputs.http_status }}; deploy_id=${{ steps.render.outputs.deploy_id }}."
+            fi
             sleep 10
           done
-          echo "Render did not serve revision ${expected_revision} before the timeout." >&2
+          echo "Render did not serve revision ${expected_revision} before the timeout. Hook HTTP=${{ steps.render.outputs.http_status }}, deploy_id=${{ steps.render.outputs.deploy_id }}." >&2
           exit 1
 
       - name: Verify liveness and readiness
@@ -243,6 +266,8 @@ jobs:
             echo "- Version: \`${{ steps.metadata.outputs.version }}\`"
             echo "- Revision: \`${{ steps.metadata.outputs.revision }}\`"
             echo "- Created: \`${{ steps.metadata.outputs.created }}\`"
+            echo "- Render hook HTTP: \`${{ steps.render.outputs.http_status }}\`"
+            echo "- Render deploy ID: \`${{ steps.render.outputs.deploy_id }}\`"
             echo "- Neon migrations: completed before deploy"
             echo "- Render health/readiness: verified"
             echo "- Account authentication mode: ${EXPECTED_AUTH_ENABLED}"
