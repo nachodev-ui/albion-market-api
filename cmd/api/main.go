@@ -115,6 +115,7 @@ func main() {
 	}
 
 	var billingHandler *billing.Handler
+	var billingWorker *billing.WebhookWorker
 	if billingCfg.Enabled {
 		provider, providerErr := billing.NewLemonProvider(billing.LemonProviderConfig{
 			APIBaseURL:          billingCfg.APIBaseURL,
@@ -145,9 +146,27 @@ func main() {
 			billingService,
 			billingCfg.WebhookSecret,
 			billingCfg.MaxWebhookBodyBytes,
+			billingCfg.WebhookIngestTimeout,
+		)
+		billingWorker = billing.NewWebhookWorker(
+			billingService,
+			dbpool,
+			logger,
+			billing.WebhookWorkerConfig{
+				PollInterval:   billingCfg.WorkerPollInterval,
+				JobTimeout:     billingCfg.WorkerJobTimeout,
+				LeaseDuration:  billingCfg.WorkerLeaseDuration,
+				BaseRetryDelay: billingCfg.WorkerBaseRetryDelay,
+				MaxRetryDelay:  billingCfg.WorkerMaxRetryDelay,
+				BatchSize:      billingCfg.WorkerBatchSize,
+				MaxAttempts:    billingCfg.WorkerMaxAttempts,
+			},
 		)
 		billingCfg.APIKey = ""
 		billingCfg.WebhookSecret = ""
+	}
+	if billingWorker != nil {
+		go billingWorker.Run(ctx)
 	}
 
 	ingestMetrics := observability.NewIngestMetrics()
@@ -281,6 +300,7 @@ func main() {
 			observability.F("billing_checkout", "/api/v1/billing/checkout"),
 			observability.F("billing_portal", "/api/v1/billing/portal"),
 			observability.F("billing_webhook", "/api/v1/webhooks/lemonsqueezy"),
+			observability.F("billing_webhook_worker", billingWorker != nil),
 			observability.F("history_ingest", "/api/v1/ingest/history"),
 			observability.F("ingest_credential_ids", credentialIDs(cfg.IngestCredentialSources)),
 			observability.F("ingest_require_https", cfg.IngestRequireHTTPS),
