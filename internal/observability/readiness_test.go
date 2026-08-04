@@ -55,15 +55,18 @@ func TestReadinessMetricsBoundsFailureComponents(t *testing.T) {
 	}
 }
 
-func TestRequiredReadinessRelationsContainAccountSavedDataSchema(t *testing.T) {
+func TestRequiredReadinessRelationsContainBillingQueueSchema(t *testing.T) {
 	t.Parallel()
 
 	required := map[string]bool{
-		"public.app_schema_state":           false,
-		"public.account_admin_audit_events": false,
-		"public.app_admins":                 false,
-		"public.saved_presets":              false,
-		"public.saved_calculations":         false,
+		"public.app_schema_state":            false,
+		"public.account_admin_audit_events":  false,
+		"public.app_admins":                  false,
+		"public.saved_presets":               false,
+		"public.saved_calculations":          false,
+		"public.billing_webhook_events":      false,
+		"public.billing_orders":              false,
+		"public.billing_notification_outbox": false,
 	}
 	for _, relation := range requiredReadinessRelations {
 		if _, exists := required[relation]; exists {
@@ -75,7 +78,7 @@ func TestRequiredReadinessRelationsContainAccountSavedDataSchema(t *testing.T) {
 			t.Fatalf("readiness relations do not include %s", relation)
 		}
 	}
-	if ExpectedSchemaVersion != 16 {
-		t.Fatalf("ExpectedSchemaVersion = %d, want 16", ExpectedSchemaVersion)
+	if ExpectedSchemaVersion != 18 {
+		t.Fatalf("ExpectedSchemaVersion = %d, want 18", ExpectedSchemaVersion)
 	}
 }
