@@ -1,0 +1,47 @@
+name: Dispatch protected production deployment once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/deploy-production-now
+      - .github/workflows/dispatch-production-once.yml
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: dispatch-production-once
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch protected Render production workflow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch deploy-production.yml with explicit confirmation
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          payload="$(jq -n \
+            --arg ref main \
+            --arg confirm DEPLOY \
+            '{ref: $ref, inputs: {confirm: $confirm}}')"
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --data "${payload}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/dispatches"
+
+          echo 'Protected production workflow dispatched.'
