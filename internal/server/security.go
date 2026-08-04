@@ -125,7 +125,7 @@ func newIPRateLimiter(options RateLimitOptions) *ipRateLimiter {
 
 func withRateLimit(next http.Handler, limiter *ipRateLimiter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions || isOperationalProbe(r.URL.Path) {
+		if r.Method == http.MethodOptions || isRateLimitExemptPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -145,6 +145,15 @@ func withRateLimit(next http.Handler, limiter *ipRateLimiter) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isRateLimitExemptPath(path string) bool {
+	switch path {
+	case "/healthz", "/readyz", "/metrics", "/api/v1/webhooks/lemonsqueezy":
+		return true
+	default:
+		return false
+	}
 }
 
 func isOperationalProbe(path string) bool {

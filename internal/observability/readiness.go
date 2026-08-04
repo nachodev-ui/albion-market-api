@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const ExpectedSchemaVersion = 17
+const ExpectedSchemaVersion = 18
 
 const (
 	ReadinessComponentPool     = "database_pool"
@@ -25,6 +25,8 @@ var requiredReadinessRelations = []string{
 	"public.albion_player_events",
 	"public.albion_player_profiles",
 	"public.app_users",
+	"public.billing_notification_outbox",
+	"public.billing_orders",
 	"public.billing_webhook_events",
 	"public.plan_entitlements",
 	"public.plans",

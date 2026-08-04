@@ -24,4 +24,21 @@ func TestValidSignature(t *testing.T) {
 	if validSignature(secret, body, "not-hex") {
 		t.Fatal("malformed signature was accepted")
 	}
+	if validSignature(secret, body, signature+"00") {
+		t.Fatal("signature with an invalid length was accepted")
+	}
+}
+
+func TestJSONContentType(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"application/json", "application/json; charset=utf-8"} {
+		if !isJSONContentType(value) {
+			t.Fatalf("%q was rejected", value)
+		}
+	}
+	for _, value := range []string{"", "text/plain", "application/json; invalid"} {
+		if isJSONContentType(value) {
+			t.Fatalf("%q was accepted", value)
+		}
+	}
 }
