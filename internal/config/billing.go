@@ -11,26 +11,26 @@ import (
 const defaultLemonSqueezyAPIBaseURL = "https://api.lemonsqueezy.com"
 
 type BillingConfig struct {
-	Enabled                 bool
-	Provider                string
-	APIBaseURL              string
-	APIKey                  string
-	StoreID                 string
-	VariantID               string
-	WebhookSecret           string
-	CheckoutRedirectURL     string
-	TestMode                bool
-	GracePeriod             time.Duration
-	HTTPTimeout             time.Duration
-	MaxWebhookBodyBytes     int64
-	WebhookIngestTimeout    time.Duration
-	WorkerPollInterval      time.Duration
-	WorkerJobTimeout        time.Duration
-	WorkerLeaseDuration     time.Duration
-	WorkerBaseRetryDelay    time.Duration
-	WorkerMaxRetryDelay     time.Duration
-	WorkerBatchSize         int
-	WorkerMaxAttempts       int
+	Enabled              bool
+	Provider             string
+	APIBaseURL           string
+	APIKey               string
+	StoreID              string
+	VariantID            string
+	WebhookSecret        string
+	CheckoutRedirectURL  string
+	TestMode             bool
+	GracePeriod          time.Duration
+	HTTPTimeout          time.Duration
+	MaxWebhookBodyBytes  int64
+	WebhookIngestTimeout time.Duration
+	WorkerPollInterval   time.Duration
+	WorkerJobTimeout     time.Duration
+	WorkerLeaseDuration  time.Duration
+	WorkerBaseRetryDelay time.Duration
+	WorkerMaxRetryDelay  time.Duration
+	WorkerBatchSize      int
+	WorkerMaxAttempts    int
 }
 
 func LoadBilling(appEnv string) (BillingConfig, error) {
@@ -107,26 +107,26 @@ func LoadBilling(appEnv string) (BillingConfig, error) {
 	}
 
 	cfg := BillingConfig{
-		Enabled:                 enabled,
-		Provider:                provider,
-		APIBaseURL:              apiBaseURL,
-		APIKey:                  apiKey,
-		StoreID:                 storeID,
-		VariantID:               variantID,
-		WebhookSecret:           webhookSecret,
-		CheckoutRedirectURL:     redirectURL,
-		TestMode:                testMode,
-		GracePeriod:             gracePeriod,
-		HTTPTimeout:             httpTimeout,
-		MaxWebhookBodyBytes:     maxWebhookBodyBytes,
-		WebhookIngestTimeout:    webhookIngestTimeout,
-		WorkerPollInterval:      workerPollInterval,
-		WorkerJobTimeout:        workerJobTimeout,
-		WorkerLeaseDuration:     workerLeaseDuration,
-		WorkerBaseRetryDelay:    workerBaseRetryDelay,
-		WorkerMaxRetryDelay:     workerMaxRetryDelay,
-		WorkerBatchSize:         workerBatchSize,
-		WorkerMaxAttempts:       workerMaxAttempts,
+		Enabled:              enabled,
+		Provider:             provider,
+		APIBaseURL:           apiBaseURL,
+		APIKey:               apiKey,
+		StoreID:              storeID,
+		VariantID:            variantID,
+		WebhookSecret:        webhookSecret,
+		CheckoutRedirectURL:  redirectURL,
+		TestMode:             testMode,
+		GracePeriod:          gracePeriod,
+		HTTPTimeout:          httpTimeout,
+		MaxWebhookBodyBytes:  maxWebhookBodyBytes,
+		WebhookIngestTimeout: webhookIngestTimeout,
+		WorkerPollInterval:   workerPollInterval,
+		WorkerJobTimeout:     workerJobTimeout,
+		WorkerLeaseDuration:  workerLeaseDuration,
+		WorkerBaseRetryDelay: workerBaseRetryDelay,
+		WorkerMaxRetryDelay:  workerMaxRetryDelay,
+		WorkerBatchSize:      workerBatchSize,
+		WorkerMaxAttempts:    workerMaxAttempts,
 	}
 	if !enabled {
 		return cfg, nil
