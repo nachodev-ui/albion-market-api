@@ -98,7 +98,7 @@ func (s *Service) EnqueueWebhook(ctx context.Context, raw []byte, headerEventNam
 		return WebhookResult{}, fmt.Errorf("enqueue billing webhook: %w", err)
 	}
 	if tag.RowsAffected() == 1 {
-		return WebhookResult{Status: "queued", EventID: eventID}, nil
+		return WebhookResult{Status: "queued"}, nil
 	}
 
 	const touchDuplicate = `
@@ -116,7 +116,7 @@ func (s *Service) EnqueueWebhook(ctx context.Context, raw []byte, headerEventNam
 	if err := s.db.QueryRow(ctx, touchDuplicate, s.providerName, eventID).Scan(&status); err != nil {
 		return WebhookResult{}, fmt.Errorf("touch duplicate billing webhook: %w", err)
 	}
-	return WebhookResult{Status: status, Duplicate: true, EventID: eventID}, nil
+	return WebhookResult{Status: status, Duplicate: true}, nil
 }
 
 func (w *WebhookWorker) Run(ctx context.Context) {
@@ -295,31 +295,31 @@ func (w *WebhookWorker) retryDelay(attempt int, eventID string) time.Duration {
 	return delay + jitter
 }
 
-func validateAndSanitizeWebhook(raw []byte, headerEventName string) (lemonWebhookEnvelope, []byte, error) {
-	var envelope lemonWebhookEnvelope
+func validateAndSanitizeWebhook(raw []byte, headerEventName string) (productionWebhookEnvelope, []byte, error) {
+	var envelope productionWebhookEnvelope
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.UseNumber()
 	if err := decoder.Decode(&envelope); err != nil {
-		return lemonWebhookEnvelope{}, nil, fmt.Errorf("%w: decode payload", ErrInvalidWebhook)
+		return productionWebhookEnvelope{}, nil, fmt.Errorf("%w: decode payload", ErrInvalidWebhook)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return lemonWebhookEnvelope{}, nil, fmt.Errorf("%w: trailing JSON content", ErrInvalidWebhook)
+		return productionWebhookEnvelope{}, nil, fmt.Errorf("%w: trailing JSON content", ErrInvalidWebhook)
 	}
 	if strings.TrimSpace(envelope.Meta.EventName) == "" || envelope.Meta.EventName != strings.TrimSpace(headerEventName) {
-		return lemonWebhookEnvelope{}, nil, fmt.Errorf("%w: event header mismatch", ErrInvalidWebhook)
+		return productionWebhookEnvelope{}, nil, fmt.Errorf("%w: event header mismatch", ErrInvalidWebhook)
 	}
 	if !isSupportedWebhookEvent(envelope.Meta.EventName) {
-		return lemonWebhookEnvelope{}, nil, fmt.Errorf("%w: unsupported event", ErrInvalidWebhook)
+		return productionWebhookEnvelope{}, nil, fmt.Errorf("%w: unsupported event", ErrInvalidWebhook)
 	}
 	if strings.TrimSpace(envelope.Data.Type) == "" || strings.TrimSpace(envelope.Data.ID) == "" || len(envelope.Data.ID) > 128 {
-		return lemonWebhookEnvelope{}, nil, fmt.Errorf("%w: invalid data identity", ErrInvalidWebhook)
+		return productionWebhookEnvelope{}, nil, fmt.Errorf("%w: invalid data identity", ErrInvalidWebhook)
 	}
 	if userID := customString(envelope.Meta.CustomData, "user_id"); userID != "" && !looksLikeUUID(userID) {
-		return lemonWebhookEnvelope{}, nil, fmt.Errorf("%w: invalid checkout user", ErrInvalidWebhook)
+		return productionWebhookEnvelope{}, nil, fmt.Errorf("%w: invalid checkout user", ErrInvalidWebhook)
 	}
 
-	sanitizedEnvelope := lemonWebhookEnvelope{}
+	sanitizedEnvelope := productionWebhookEnvelope{}
 	sanitizedEnvelope.Meta.EventName = envelope.Meta.EventName
 	if userID := customString(envelope.Meta.CustomData, "user_id"); userID != "" {
 		sanitizedEnvelope.Meta.CustomData = map[string]any{"user_id": userID}
@@ -329,12 +329,12 @@ func validateAndSanitizeWebhook(raw []byte, headerEventName string) (lemonWebhoo
 	sanitizedEnvelope.Data.Attributes = envelope.Data.Attributes
 	sanitized, err := json.Marshal(sanitizedEnvelope)
 	if err != nil {
-		return lemonWebhookEnvelope{}, nil, fmt.Errorf("sanitize billing webhook: %w", err)
+		return productionWebhookEnvelope{}, nil, fmt.Errorf("sanitize billing webhook: %w", err)
 	}
 	return envelope, sanitized, nil
 }
 
-func (s *Service) validateWebhookScope(envelope lemonWebhookEnvelope) error {
+func (s *Service) validateWebhookScope(envelope productionWebhookEnvelope) error {
 	attributes := envelope.Data.Attributes
 	if strconv.FormatInt(attributes.StoreID, 10) != s.storeID || attributes.TestMode != s.expectedTestMode {
 		return fmt.Errorf("%w: webhook scope mismatch", ErrInvalidWebhook)
