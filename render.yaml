@@ -42,7 +42,7 @@ services:
       - key: BILLING_PROVIDER
         value: lemonsqueezy
       - key: BILLING_TEST_MODE
-        value: "true"
+        value: "false"
       - key: BILLING_CHECKOUT_REDIRECT_URL
         value: https://albioncalculator.app/account?checkout=success
       - key: BILLING_GRACE_PERIOD
@@ -51,6 +51,22 @@ services:
         value: 10s
       - key: BILLING_MAX_WEBHOOK_BODY_BYTES
         value: "1048576"
+      - key: BILLING_WEBHOOK_INGEST_TIMEOUT
+        value: 1500ms
+      - key: BILLING_WEBHOOK_WORKER_POLL_INTERVAL
+        value: 250ms
+      - key: BILLING_WEBHOOK_JOB_TIMEOUT
+        value: 15s
+      - key: BILLING_WEBHOOK_LEASE_DURATION
+        value: 60s
+      - key: BILLING_WEBHOOK_BASE_RETRY_DELAY
+        value: 5s
+      - key: BILLING_WEBHOOK_MAX_RETRY_DELAY
+        value: 15m
+      - key: BILLING_WEBHOOK_BATCH_SIZE
+        value: "10"
+      - key: BILLING_WEBHOOK_MAX_ATTEMPTS
+        value: "8"
       - key: LEMONSQUEEZY_API_BASE_URL
         value: https://api.lemonsqueezy.com
       - key: LEMONSQUEEZY_STORE_ID
