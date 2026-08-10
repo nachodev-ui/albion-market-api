@@ -26,6 +26,50 @@ func (r *PostgresRepository) UpsertPvPEvents(ctx context.Context, events []PvPEv
 	if len(events) == 0 {
 		return 0, nil
 	}
+
+	// The global feed is scanned for every event so we never miss activity for a
+	// linked character, but durable storage is intentionally scoped to watched
+	// players. Persisting the full world feed would grow by hundreds of thousands
+	// of rows per day while the product only serves linked profiles.
+	watchedByServer := make(map[Server]map[string]struct{})
+	filtered := make([]PvPEventRecord, 0, len(events))
+	for _, event := range events {
+		watched, ok := watchedByServer[event.Server]
+		if !ok {
+			rows, err := r.db.Query(ctx, `
+				select player_id
+				from albion_player_profiles
+				where server = $1
+			`, event.Server)
+			if err != nil {
+				return 0, fmt.Errorf("list watched PvP players: %w", err)
+			}
+			watched = make(map[string]struct{})
+			for rows.Next() {
+				var playerID string
+				if err := rows.Scan(&playerID); err != nil {
+					rows.Close()
+					return 0, fmt.Errorf("scan watched PvP player: %w", err)
+				}
+				watched[playerID] = struct{}{}
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return 0, fmt.Errorf("iterate watched PvP players: %w", err)
+			}
+			rows.Close()
+			watchedByServer[event.Server] = watched
+		}
+		_, killerWatched := watched[event.KillerID]
+		_, victimWatched := watched[event.VictimID]
+		if killerWatched || victimWatched {
+			filtered = append(filtered, event)
+		}
+	}
+	if len(filtered) == 0 {
+		return 0, nil
+	}
+
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("begin PvP event upsert: %w", err)
@@ -75,7 +119,7 @@ func (r *PostgresRepository) UpsertPvPEvents(ctx context.Context, events []PvPEv
 	`
 
 	batch := &pgx.Batch{}
-	for _, event := range events {
+	for _, event := range filtered {
 		killerEquipment, err := json.Marshal(event.KillerEquipment)
 		if err != nil {
 			return 0, fmt.Errorf("encode killer equipment: %w", err)
@@ -99,7 +143,7 @@ func (r *PostgresRepository) UpsertPvPEvents(ctx context.Context, events []PvPEv
 
 	results := tx.SendBatch(ctx, batch)
 	var affected int64
-	for range events {
+	for range filtered {
 		tag, execErr := results.Exec()
 		if execErr != nil {
 			_ = results.Close()
