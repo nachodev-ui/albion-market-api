@@ -97,7 +97,7 @@ func main() {
 		logger.Error("player_profile.repository_configure_failed", observability.F("error", err))
 		return
 	}
-	profileProvider, err := playerprofile.NewGameInfoProvider(12 * time.Second)
+	profileProvider, err := playerprofile.NewGameInfoProvider(10 * time.Second)
 	if err != nil {
 		logger.Error("player_profile.provider_configure_failed", observability.F("error", err))
 		return
@@ -108,6 +108,41 @@ func main() {
 		return
 	}
 	profileHandler := playerprofile.NewHandler(profileService)
+
+	pvpPrimary, err := playerprofile.NewGameInfoEventsProvider(10 * time.Second)
+	if err != nil {
+		logger.Error("pvp_ingest.primary_configure_failed", observability.F("error", err))
+		return
+	}
+	pvpFallback, err := playerprofile.NewMurderLedgerFallback("https://murderledger.com/api", 10*time.Second)
+	if err != nil {
+		logger.Error("pvp_ingest.fallback_configure_failed", observability.F("error", err))
+		return
+	}
+	pvpWorkerConfig := playerprofile.DefaultPvPIngestWorkerConfig()
+	pvpWorker, err := playerprofile.NewPvPIngestWorker(
+		profileRepository,
+		pvpPrimary,
+		pvpFallback,
+		logger,
+		pvpWorkerConfig,
+	)
+	if err != nil {
+		logger.Error("pvp_ingest.worker_configure_failed", observability.F("error", err))
+		return
+	}
+	identityWorkerConfig := playerprofile.DefaultIdentityRefreshWorkerConfig()
+	identityWorker, err := playerprofile.NewIdentityRefreshWorker(
+		profileRepository,
+		profileProvider,
+		logger,
+		identityWorkerConfig,
+	)
+	if err != nil {
+		logger.Error("player_identity.worker_configure_failed", observability.F("error", err))
+		return
+	}
+
 	accountAuthenticator, err := authn.New(authCfg)
 	if err != nil {
 		logger.Error("auth.configure_failed", observability.F("error", err))
@@ -168,6 +203,8 @@ func main() {
 	if billingWorker != nil {
 		go billingWorker.Run(ctx)
 	}
+	go pvpWorker.Run(ctx)
+	go identityWorker.Run(ctx)
 
 	ingestMetrics := observability.NewIngestMetrics()
 	historyIngestMetrics := observability.NewHistoryIngestMetrics()
@@ -301,6 +338,9 @@ func main() {
 			observability.F("billing_portal", "/api/v1/billing/portal"),
 			observability.F("billing_webhook", "/api/v1/webhooks/lemonsqueezy"),
 			observability.F("billing_webhook_worker", billingWorker != nil),
+			observability.F("pvp_ingest_worker", true),
+			observability.F("pvp_ingest_poll_interval", pvpWorkerConfig.PollInterval),
+			observability.F("pvp_identity_stale_after", identityWorkerConfig.StaleAfter),
 			observability.F("history_ingest", "/api/v1/ingest/history"),
 			observability.F("ingest_credential_ids", credentialIDs(cfg.IngestCredentialSources)),
 			observability.F("ingest_require_https", cfg.IngestRequireHTTPS),
