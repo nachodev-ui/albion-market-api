@@ -69,31 +69,31 @@ type Event struct {
 }
 
 type PvPEventRecord struct {
-	Server                 Server
-	EventID                int64
-	OccurredAt             time.Time
-	KillerID               string
-	KillerName             string
-	KillerGuildID          *string
-	KillerGuildName        *string
-	KillerAllianceID       *string
-	KillerAllianceName     *string
-	KillerItemPower        float64
-	KillerWeaponType       *string
-	KillerEquipment        Equipment
-	VictimID               string
-	VictimName             string
-	VictimGuildID          *string
-	VictimGuildName        *string
-	VictimAllianceID       *string
-	VictimAllianceName     *string
-	VictimItemPower        float64
-	VictimWeaponType       *string
-	VictimEquipment        Equipment
-	TotalVictimKillFame    int64
-	ParticipantCount       int
-	GroupMemberCount       int
-	Source                 string
+	Server              Server
+	EventID             int64
+	OccurredAt          time.Time
+	KillerID            string
+	KillerName          string
+	KillerGuildID       *string
+	KillerGuildName     *string
+	KillerAllianceID    *string
+	KillerAllianceName  *string
+	KillerItemPower     float64
+	KillerWeaponType    *string
+	KillerEquipment     Equipment
+	VictimID            string
+	VictimName          string
+	VictimGuildID       *string
+	VictimGuildName     *string
+	VictimAllianceID    *string
+	VictimAllianceName  *string
+	VictimItemPower     float64
+	VictimWeaponType    *string
+	VictimEquipment     Equipment
+	TotalVictimKillFame int64
+	ParticipantCount    int
+	GroupMemberCount    int
+	Source              string
 }
 
 type PvPFetchRequest struct {
