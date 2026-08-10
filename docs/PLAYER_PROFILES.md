@@ -7,8 +7,9 @@ The player-profile API links one public Albion Online character to an authentica
 - Profile reads, linking, refresh, and unlinking require an Auth0 access token with `read:account`.
 - Linking performs one identity lookup so the selected player ID can be validated.
 - After linking, identity refresh happens asynchronously in a background worker.
-- PvP events are ingested continuously for all three regions from the global GameInfo event feed.
-- Events are idempotent by `(server, event_id)` and retain both players' visible equipment and IP.
+- The global GameInfo event stream is scanned continuously for all three regions.
+- Durable event payloads are retained only when the killer or victim is a linked/watched player. The regional cursor still advances across the complete global feed, so irrelevant world events do not consume unbounded database storage.
+- Retained events are idempotent by `(server, event_id)` and keep both players' visible equipment and IP.
 - GameInfo polling uses retries, adaptive polling, persisted failure state and a circuit breaker.
 - While the circuit is open, MurderLedger is used only as a background reconciliation source for linked players. It is never a dependency of an HTTP profile request.
 - `identityRefreshedAt` and `activityRefreshedAt` are independent freshness signals. `activitySource` reports the source that last refreshed the regional activity store.
@@ -36,6 +37,7 @@ The API process runs one ingestion loop per Albion region:
 GameInfo /events
   -> retry
   -> circuit breaker
+  -> match killer/victim against linked players
   -> albion_pvp_events
 
 circuit open
@@ -44,6 +46,8 @@ circuit open
 ```
 
 Normal polling runs every 30 seconds. When more than one page is required to catch up, the next poll is shortened to 10 seconds. Each page contains at most 50 events and up to 20 pages are traversed, matching the approximately 1,000-event rolling upstream window. Keeping the worker running continuously is therefore operationally important.
+
+The ingestion cursor is global per region even though payload retention is scoped to linked players. This is intentional: it preserves full-feed gap detection while keeping storage proportional to actual application usage rather than total Albion world activity.
 
 ## Identity refresh
 
