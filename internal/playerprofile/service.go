@@ -16,20 +16,22 @@ var (
 	ErrProviderUnavailable = errors.New("Albion provider unavailable")
 )
 
+// CooldownError remains part of the HTTP contract for backwards-compatible
+// clients, but local-store refreshes no longer use a cooldown.
 type CooldownError struct{ RetryAfter time.Duration }
 
 func (e CooldownError) Error() string { return "profile refresh is on cooldown" }
 
 type Service struct {
 	repository Repository
-	provider   Provider
+	provider   PlayerIdentityProvider
 	accounts   *accounts.Service
 	now        func() time.Time
 	cooldown   time.Duration
 	eventLimit int
 }
 
-func NewService(repository Repository, provider Provider, accountService *accounts.Service, cooldown time.Duration, eventLimit int) (*Service, error) {
+func NewService(repository Repository, provider PlayerIdentityProvider, accountService *accounts.Service, cooldown time.Duration, eventLimit int) (*Service, error) {
 	if repository == nil || provider == nil || accountService == nil {
 		return nil, errors.New("player profile dependencies are required")
 	}
@@ -51,6 +53,9 @@ func (s *Service) Search(ctx context.Context, serverValue, name string) ([]Searc
 	return results, nil
 }
 
+// Current is intentionally local-only. Identity comes from the cached linked
+// profile and combat activity comes from albion_pvp_events. Opening a profile
+// therefore never waits for GameInfo or any secondary provider.
 func (s *Service) Current(ctx context.Context, identity authn.Identity) (CurrentResponse, error) {
 	userID, err := s.userID(ctx, identity)
 	if err != nil {
@@ -60,21 +65,7 @@ func (s *Service) Current(ctx context.Context, identity authn.Identity) (Current
 	if err != nil {
 		return CurrentResponse{}, err
 	}
-
-	// Migration 0014 could only backfill the historical weapon_type column. Profiles
-	// first cached before that release therefore contain one player weapon and no
-	// opponent loadout. Rehydrate that legacy cache once the cooldown window has
-	// elapsed so merely opening the profile repairs the incomplete presentation.
-	if snapshotNeedsEquipmentRefresh(snapshot) && refreshWindowElapsed(snapshot.Profile, s.now().UTC(), s.cooldown) {
-		player, events, fetchErr := s.fetchSnapshot(ctx, snapshot.Profile.Server, snapshot.Profile.PlayerID)
-		if fetchErr == nil {
-			if refreshed, saveErr := s.repository.Save(ctx, userID, player, events, s.now().UTC()); saveErr == nil {
-				snapshot = refreshed
-			}
-		}
-	}
-
-	return responseFromSnapshot(snapshot), nil
+	return responseFromSnapshot(limitSnapshotEvents(snapshot, s.eventLimit)), nil
 }
 
 func (s *Service) Link(ctx context.Context, identity authn.Identity, request LinkRequest) (CurrentResponse, error) {
@@ -90,46 +81,30 @@ func (s *Service) Link(ctx context.Context, identity authn.Identity, request Lin
 	if err != nil {
 		return CurrentResponse{}, err
 	}
-	player, events, err := s.fetchSnapshot(ctx, server, playerID)
+
+	// Linking is the only authenticated profile operation that needs identity
+	// confirmation immediately. It does not request kills/deaths; those are
+	// already collected independently by the continuous worker.
+	player, err := s.provider.Player(ctx, server, playerID)
 	if err != nil {
-		return CurrentResponse{}, err
+		return CurrentResponse{}, fmt.Errorf("%w: fetch Albion player: %v", ErrProviderUnavailable, err)
 	}
 	if player.PlayerID != playerID {
 		return CurrentResponse{}, fmt.Errorf("%w: provider returned a different player", ErrInvalidRequest)
 	}
-	snapshot, err := s.repository.Save(ctx, userID, player, events, s.now().UTC())
+	snapshot, err := s.repository.Save(ctx, userID, player, nil, s.now().UTC())
 	if err != nil {
 		return CurrentResponse{}, err
 	}
-	return responseFromSnapshot(snapshot), nil
+	return responseFromSnapshot(limitSnapshotEvents(snapshot, s.eventLimit)), nil
 }
 
+// Refresh now means "read the newest locally ingested snapshot". The ingestion
+// and identity workers own upstream I/O, retries and circuit breaking. This makes
+// the user-facing refresh effectively a database read and removes the former
+// five-minute penalty after upstream failures.
 func (s *Service) Refresh(ctx context.Context, identity authn.Identity) (CurrentResponse, error) {
-	userID, err := s.userID(ctx, identity)
-	if err != nil {
-		return CurrentResponse{}, err
-	}
-	current, err := s.repository.Get(ctx, userID)
-	if err != nil {
-		return CurrentResponse{}, err
-	}
-	now := s.now().UTC()
-	if current.Profile.LastRefreshAttempt != nil {
-		next := current.Profile.LastRefreshAttempt.Add(s.cooldown)
-		if now.Before(next) {
-			return CurrentResponse{}, CooldownError{RetryAfter: next.Sub(now)}
-		}
-	}
-	player, events, err := s.fetchSnapshot(ctx, current.Profile.Server, current.Profile.PlayerID)
-	if err != nil {
-		_ = s.repository.MarkRefreshFailure(ctx, userID, now, err.Error())
-		return CurrentResponse{}, err
-	}
-	snapshot, err := s.repository.Save(ctx, userID, player, events, now)
-	if err != nil {
-		return CurrentResponse{}, err
-	}
-	return responseFromSnapshot(snapshot), nil
+	return s.Current(ctx, identity)
 }
 
 func (s *Service) Delete(ctx context.Context, identity authn.Identity) error {
@@ -148,18 +123,15 @@ func (s *Service) userID(ctx context.Context, identity authn.Identity) (string, 
 	return access.User.ID, nil
 }
 
-func (s *Service) fetchSnapshot(ctx context.Context, server Server, playerID string) (Player, []Event, error) {
-	player, err := s.provider.Player(ctx, server, playerID)
-	if err != nil {
-		return Player{}, nil, fmt.Errorf("fetch Albion player: %w", err)
+func limitSnapshotEvents(snapshot Snapshot, limit int) Snapshot {
+	if limit > 0 && len(snapshot.Events) > limit {
+		snapshot.Events = snapshot.Events[:limit]
 	}
-	events, err := s.provider.Events(ctx, server, playerID, s.eventLimit)
-	if err != nil {
-		return Player{}, nil, fmt.Errorf("fetch Albion activity: %w", err)
-	}
-	return player, events, nil
+	return snapshot
 }
 
+// Kept for compatibility with migration/legacy-cache tests. New profile reads no
+// longer perform provider rehydration in the HTTP request path.
 func refreshWindowElapsed(profile Profile, now time.Time, cooldown time.Duration) bool {
 	if profile.LastRefreshAttempt == nil {
 		return true
@@ -209,18 +181,18 @@ func equipmentSlotCount(equipment Equipment) int {
 }
 
 func responseFromSnapshot(snapshot Snapshot) CurrentResponse {
-	summary := Summary{
-		KillFame:         snapshot.Profile.KillFame,
-		DeathFame:        snapshot.Profile.DeathFame,
-		FameRatio:        snapshot.Profile.FameRatio,
-		RecentFightCount: len(snapshot.Events),
+	if snapshot.Events == nil {
+		snapshot.Events = []Event{}
 	}
+	summary := Summary{RecentFightCount: len(snapshot.Events)}
 	for _, event := range snapshot.Events {
-		if event.Result == "kill" {
+		switch event.Result {
+		case "kill":
 			summary.RecentKills++
-		}
-		if event.Result == "death" {
+			summary.KillFame += event.KillFame
+		case "death":
 			summary.RecentDeaths++
+			summary.DeathFame += event.KillFame
 		}
 	}
 	if summary.RecentDeaths > 0 {
@@ -230,8 +202,10 @@ func responseFromSnapshot(snapshot Snapshot) CurrentResponse {
 		ratio := float64(summary.RecentKills)
 		summary.KDRatio = &ratio
 	}
-	if snapshot.Events == nil {
-		snapshot.Events = []Event{}
+	if summary.DeathFame > 0 {
+		summary.FameRatio = float64(summary.KillFame) / float64(summary.DeathFame)
+	} else if summary.KillFame > 0 {
+		summary.FameRatio = float64(summary.KillFame)
 	}
 	return CurrentResponse{Profile: snapshot.Profile, Summary: summary, Events: snapshot.Events}
 }
