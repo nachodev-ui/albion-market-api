@@ -90,14 +90,14 @@ func (r *PostgresRepository) Get(ctx context.Context, userID string) (Snapshot, 
 		where server = $1
 		  and (killer_id = $2 or victim_id = $2)
 		order by occurred_at desc, event_id desc
-		limit 100
+		limit 50
 	`
 	rows, err := r.db.Query(ctx, eventsQuery, profile.Server, profile.PlayerID)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("get Albion PvP events: %w", err)
 	}
 	defer rows.Close()
-	events := make([]Event, 0, 100)
+	events := make([]Event, 0, 50)
 	for rows.Next() {
 		var event Event
 		var playerEquipmentJSON string
