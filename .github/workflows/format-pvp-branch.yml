@@ -1,0 +1,34 @@
+name: Format PvP branch
+
+on:
+  push:
+    branches:
+      - feat/pvp-event-ingestion
+
+permissions:
+  contents: write
+
+jobs:
+  gofmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/pvp-event-ingestion
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Format changed Go code
+        run: gofmt -w cmd/api/main.go internal/playerprofile
+      - name: Commit formatting when needed
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Formatting already clean."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cmd/api/main.go internal/playerprofile
+          git commit -m "style(pvp): apply gofmt"
+          git push origin HEAD:feat/pvp-event-ingestion
