@@ -68,6 +68,8 @@ func TestRequiredReadinessRelationsContainBillingQueueSchema(t *testing.T) {
 		"public.billing_webhook_events":      false,
 		"public.billing_orders":              false,
 		"public.billing_notification_outbox": false,
+		"public.albion_pvp_events":           false,
+		"public.albion_pvp_ingest_state":     false,
 	}
 	for _, relation := range requiredReadinessRelations {
 		if _, exists := required[relation]; exists {
@@ -79,7 +81,7 @@ func TestRequiredReadinessRelationsContainBillingQueueSchema(t *testing.T) {
 			t.Fatalf("readiness relations do not include %s", relation)
 		}
 	}
-	if ExpectedSchemaVersion != 18 {
-		t.Fatalf("ExpectedSchemaVersion = %d, want 18", ExpectedSchemaVersion)
+	if ExpectedSchemaVersion != 19 {
+		t.Fatalf("ExpectedSchemaVersion = %d, want 19", ExpectedSchemaVersion)
 	}
 }

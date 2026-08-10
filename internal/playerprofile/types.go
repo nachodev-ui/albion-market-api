@@ -68,26 +68,70 @@ type Event struct {
 	GroupMemberCount  int       `json:"groupMemberCount"`
 }
 
+type PvPEventRecord struct {
+	Server              Server
+	EventID             int64
+	OccurredAt          time.Time
+	KillerID            string
+	KillerName          string
+	KillerGuildID       *string
+	KillerGuildName     *string
+	KillerAllianceID    *string
+	KillerAllianceName  *string
+	KillerItemPower     float64
+	KillerWeaponType    *string
+	KillerEquipment     Equipment
+	VictimID            string
+	VictimName          string
+	VictimGuildID       *string
+	VictimGuildName     *string
+	VictimAllianceID    *string
+	VictimAllianceName  *string
+	VictimItemPower     float64
+	VictimWeaponType    *string
+	VictimEquipment     Equipment
+	TotalVictimKillFame int64
+	ParticipantCount    int
+	GroupMemberCount    int
+	Source              string
+}
+
+type PvPFetchRequest struct {
+	Server   Server
+	Limit    int
+	Offset   int
+	PlayerID *string
+}
+
+type LinkedPlayer struct {
+	UserID   string
+	Server   Server
+	PlayerID string
+}
+
 type Profile struct {
-	ID                 string     `json:"id"`
-	Server             Server     `json:"server"`
-	PlayerID           string     `json:"playerId"`
-	PlayerName         string     `json:"playerName"`
-	GuildID            *string    `json:"guildId,omitempty"`
-	GuildName          *string    `json:"guildName,omitempty"`
-	AllianceID         *string    `json:"allianceId,omitempty"`
-	AllianceName       *string    `json:"allianceName,omitempty"`
-	Avatar             *string    `json:"avatar,omitempty"`
-	AvatarRing         *string    `json:"avatarRing,omitempty"`
-	VerificationStatus string     `json:"verificationStatus"`
-	KillFame           int64      `json:"killFame"`
-	DeathFame          int64      `json:"deathFame"`
-	FameRatio          float64    `json:"fameRatio"`
-	LinkedAt           time.Time  `json:"linkedAt"`
-	LastRefreshedAt    *time.Time `json:"lastRefreshedAt,omitempty"`
-	LastRefreshAttempt *time.Time `json:"lastRefreshAttemptAt,omitempty"`
-	LastRefreshStatus  string     `json:"lastRefreshStatus"`
-	LastRefreshError   *string    `json:"lastRefreshError,omitempty"`
+	ID                  string     `json:"id"`
+	Server              Server     `json:"server"`
+	PlayerID            string     `json:"playerId"`
+	PlayerName          string     `json:"playerName"`
+	GuildID             *string    `json:"guildId,omitempty"`
+	GuildName           *string    `json:"guildName,omitempty"`
+	AllianceID          *string    `json:"allianceId,omitempty"`
+	AllianceName        *string    `json:"allianceName,omitempty"`
+	Avatar              *string    `json:"avatar,omitempty"`
+	AvatarRing          *string    `json:"avatarRing,omitempty"`
+	VerificationStatus  string     `json:"verificationStatus"`
+	KillFame            int64      `json:"killFame"`
+	DeathFame           int64      `json:"deathFame"`
+	FameRatio           float64    `json:"fameRatio"`
+	LinkedAt            time.Time  `json:"linkedAt"`
+	LastRefreshedAt     *time.Time `json:"lastRefreshedAt,omitempty"`
+	IdentityRefreshedAt *time.Time `json:"identityRefreshedAt,omitempty"`
+	ActivityRefreshedAt *time.Time `json:"activityRefreshedAt,omitempty"`
+	ActivitySource      *string    `json:"activitySource,omitempty"`
+	LastRefreshAttempt  *time.Time `json:"lastRefreshAttemptAt,omitempty"`
+	LastRefreshStatus   string     `json:"lastRefreshStatus"`
+	LastRefreshError    *string    `json:"lastRefreshError,omitempty"`
 }
 
 type Summary struct {

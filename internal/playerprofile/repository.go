@@ -57,23 +57,47 @@ func (r *PostgresRepository) Get(ctx context.Context, userID string) (Snapshot, 
 		}
 		return Snapshot{}, fmt.Errorf("get Albion profile: %w", err)
 	}
+	profile.IdentityRefreshedAt = profile.LastRefreshedAt
+
+	const freshnessQuery = `
+		select last_success_at, active_source
+		from albion_pvp_ingest_state
+		where server = $1
+	`
+	if err := r.db.QueryRow(ctx, freshnessQuery, profile.Server).Scan(
+		&profile.ActivityRefreshedAt, &profile.ActivitySource,
+	); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Snapshot{}, fmt.Errorf("get Albion PvP freshness: %w", err)
+	}
 
 	const eventsQuery = `
-		select event_id, occurred_at, result, opponent_id, opponent_name,
-			opponent_guild, kill_fame, player_item_power, opponent_item_power,
-			weapon_type, player_equipment::text, opponent_equipment::text,
-			participant_count, group_member_count
-		from albion_player_events
-		where profile_id = $1::uuid
+		select
+			event_id,
+			occurred_at,
+			case when killer_id = $2 then 'kill' else 'death' end,
+			case when killer_id = $2 then victim_id else killer_id end,
+			case when killer_id = $2 then victim_name else killer_name end,
+			case when killer_id = $2 then victim_guild_name else killer_guild_name end,
+			total_victim_kill_fame,
+			case when killer_id = $2 then killer_item_power else victim_item_power end,
+			case when killer_id = $2 then victim_item_power else killer_item_power end,
+			case when killer_id = $2 then killer_weapon_type else victim_weapon_type end,
+			case when killer_id = $2 then killer_equipment else victim_equipment end::text,
+			case when killer_id = $2 then victim_equipment else killer_equipment end::text,
+			participant_count,
+			group_member_count
+		from albion_pvp_events
+		where server = $1
+		  and (killer_id = $2 or victim_id = $2)
 		order by occurred_at desc, event_id desc
-		limit 100
+		limit 50
 	`
-	rows, err := r.db.Query(ctx, eventsQuery, profile.ID)
+	rows, err := r.db.Query(ctx, eventsQuery, profile.Server, profile.PlayerID)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("get Albion events: %w", err)
+		return Snapshot{}, fmt.Errorf("get Albion PvP events: %w", err)
 	}
 	defer rows.Close()
-	events := make([]Event, 0)
+	events := make([]Event, 0, 50)
 	for rows.Next() {
 		var event Event
 		var playerEquipmentJSON string
@@ -85,7 +109,7 @@ func (r *PostgresRepository) Get(ctx context.Context, userID string) (Snapshot, 
 			&playerEquipmentJSON, &opponentEquipmentJSON,
 			&event.ParticipantCount, &event.GroupMemberCount,
 		); err != nil {
-			return Snapshot{}, fmt.Errorf("scan Albion event: %w", err)
+			return Snapshot{}, fmt.Errorf("scan Albion PvP event: %w", err)
 		}
 		if err := json.Unmarshal([]byte(playerEquipmentJSON), &event.PlayerEquipment); err != nil {
 			return Snapshot{}, fmt.Errorf("decode player equipment: %w", err)
@@ -96,7 +120,7 @@ func (r *PostgresRepository) Get(ctx context.Context, userID string) (Snapshot, 
 		events = append(events, event)
 	}
 	if err := rows.Err(); err != nil {
-		return Snapshot{}, fmt.Errorf("iterate Albion events: %w", err)
+		return Snapshot{}, fmt.Errorf("iterate Albion PvP events: %w", err)
 	}
 	return Snapshot{Profile: profile, Events: events}, nil
 }
